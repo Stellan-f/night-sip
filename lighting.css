@@ -1,0 +1,388 @@
+/* v05 — one warm key light, cool ambient bounce, soft contact shadows.
+   Images and drink data stay intact; this layer only controls presentation. */
+:root {
+  --muted: #bcb7c3;
+  --line: #ffffff13;
+  --edge-light: inset 0 1px 0 #fff3e519;
+  --elevation: 0 8px 22px -12px #0009, 0 26px 46px -32px #000b;
+  --raised: 0 14px 28px -14px #000b, 0 32px 52px -30px #000c;
+  --header-fade-height: 138px;
+  --glass-blur: 6px;
+}
+body {
+  background-color: var(--bg);
+  background-image: radial-gradient(ellipse 790px 670px at 89% 100px, #b37a4312, transparent 76%),
+    radial-gradient(ellipse 640px 800px at -15% 580px, #718c9b08, transparent 80%);
+  background-attachment: fixed;
+}
+/* v09: blur and tint fade separately so bright text cannot bloom into the nav. */
+.header:before {
+  height: var(--header-fade-height);
+  background: linear-gradient(to bottom, #101015fa 0%, #101015f5 45%, #101015dd 61%, #1010159e 74%, #1010154d 86%, #10101514 95%, #10101500 100%);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  mask-image: none; -webkit-mask-image: none;
+}
+.header:after {
+  content: ""; position: fixed; inset: 0 0 auto; height: var(--header-fade-height);
+  z-index: -2; pointer-events: none;
+  backdrop-filter: blur(9px) saturate(.78) brightness(.9);
+  -webkit-backdrop-filter: blur(9px) saturate(.78) brightness(.9);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 58%, #000d 72%, #0007 85%, #0002 94%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 58%, #000d 72%, #0007 85%, #0002 94%, transparent 100%);
+}
+.header nav, .saved-nav {
+  background: linear-gradient(135deg, #34303ad9, #211f28e6);
+  box-shadow: var(--edge-light), 0 5px 15px -10px #000b;
+}
+.header nav:before {
+  background: linear-gradient(140deg, #59505b, #403b48);
+  box-shadow: inset 0 1px 0 #fff2e51f, 0 3px 8px #0004;
+}
+.hero { gap: 64px; padding-bottom: 64px; }
+.hero-copy h1 { text-wrap: balance; }
+.hero-copy h1 span { color: #edc9a3; }
+.hero-copy > p { color: #c0bac4; }
+.hero-foot { color: #b5acba; }
+.button.primary {
+  background: linear-gradient(135deg, #f2cfa2, #dfad7b);
+  color: #271d17;
+  box-shadow: inset 0 1px 0 #fff8df80, 0 5px 12px -7px #e8b68128, 0 9px 22px -16px #000b;
+}
+.button.secondary { background: linear-gradient(145deg, #3a3542, #2b2733); box-shadow: var(--edge-light); }
+.hero-feature {
+  background: radial-gradient(ellipse at 24% 9%, #e8c69a26, transparent 60%),
+    radial-gradient(ellipse at 98% 55%, #a6b5cc10, transparent 68%),
+    linear-gradient(155deg, #3d3332, #242126 73%, #1e1b21);
+  box-shadow: inset 0 1px 0 #ffe2b936, inset 1px 0 0 #ffe2b910, var(--elevation);
+}
+.hero-feature:before {
+  inset: 0; width: auto; height: auto; border-radius: inherit;
+  transform: none; filter: none; pointer-events: none;
+  background: linear-gradient(125deg, #fff4d909, transparent 44%),
+    linear-gradient(to top, #16131b8c 0%, transparent 34%);
+}
+.hero-feature:after {
+  content: ""; position: absolute; pointer-events: none;
+  width: 126px; height: 12px; left: 50%; bottom: 99px;
+  border-radius: 50%; transform: translateX(-43%);
+  background: #08070bb3; filter: blur(9px);
+  box-shadow: 10px 9px 15px #08070b66;
+}
+.hero-art { z-index: 1; inset: 9px 12% 86px; }
+.hero-art .drink-photo {
+  filter: drop-shadow(9px 15px 12px #0006);
+}
+.hero-caption { z-index: 2; background: #17131ba8; color: #dfd0c1; box-shadow: var(--edge-light); }
+.feature-info { z-index: 2; }
+.feature-info p, .feature-info small { color: #cfc1bb; }
+.hero-feature > .icon-button { z-index: 2; background: #42383d; color: #f4e8dd; box-shadow: var(--edge-light), 0 5px 12px #0003; }
+.catalog { padding-top: 34px; }
+.section-head { margin-bottom: 25px; }
+.search, .base-trigger {
+  background: linear-gradient(140deg, #302b37, #23202b);
+  box-shadow: inset 0 1px 0 #fff1e00d, 0 4px 12px -8px #000b;
+}
+.search:focus-within { background: #302a36; border-color: #e7b98980; }
+.search:focus-within input { color: var(--cream); }
+.collection-tabs { background: #24212bd9; box-shadow: var(--edge-light), 0 5px 14px -12px #000c; }
+.collection-tab.selected, .chip.selected { background: linear-gradient(135deg, #f0cda3, #dfb286); color: #271d17; box-shadow: inset 0 1px 0 #ffecc780, 0 3px 9px #0003; }
+/* v07: a single gold surface travels between the selected filters. */
+.sliding-filters { position: relative; isolation: isolate; }
+.sliding-filters > button { position: relative; }
+.filter-highlight {
+  position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none;
+  border-radius: 999px; transform-origin: 0 0;
+  background: linear-gradient(135deg, #f0cda3, #dfb286);
+  box-shadow: inset 0 1px 0 #ffecc780, 0 3px 9px #0003;
+}
+.filter-label { position: relative; z-index: 2; display: inline-block; pointer-events: none; transition: transform .15s ease-out; }
+.sliding-filters.has-sliding-highlight > button.selected { background: transparent; box-shadow: none; }
+.sliding-filters > button:hover, .sliding-filters > button:active { transform: none; }
+.sliding-filters > button:active .filter-label { transform: scale(.96); }
+@media (prefers-reduced-motion: reduce) {
+  .sliding-filters > button:active .filter-label { transform: none; }
+}
+.chip { background: #27232e; box-shadow: inset 0 1px 0 #fff1e009; }
+.list-meta { min-height: 68px; }
+.base-menu {
+  background: linear-gradient(145deg, #36303df5, #24212cf5);
+  backdrop-filter: blur(12px) saturate(.85); -webkit-backdrop-filter: blur(12px) saturate(.85);
+  box-shadow: inset 0 1px 0 #fff0db28, 0 12px 28px -8px #000b, 0 30px 60px -24px #000b;
+}
+.base-option[aria-selected="true"] { background: #564231; }
+.drink-grid { gap: 28px; }
+/* v08: a separate motion shell keeps arrival depth independent of card hover. */
+.drink-arrival { display: flex; min-width: 0; transform-origin: 50% 65%; }
+.drink-arrival > .drink-card { width: 100%; }
+.drink-card {
+  display: flex; flex-direction: column;
+  background: linear-gradient(145deg, #25212c, #1c1a23);
+  box-shadow: var(--edge-light), inset 1px 0 0 #fff3e507, var(--elevation);
+}
+.drink-visual {
+  isolation: isolate;
+  background: radial-gradient(ellipse at 19% 6%, #ffe0ad21, transparent 67%),
+    radial-gradient(ellipse at 100% 60%, #b8d0ea10, transparent 65%),
+    linear-gradient(155deg, #ffffff09, #09080e70), var(--surface);
+}
+.drink-visual:before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(135deg, #fff4d60a, transparent 44%),
+    linear-gradient(to top, #12101988, transparent 24%);
+  box-shadow: inset 0 1px 0 #ffe7c51c;
+}
+.drink-visual:after {
+  content: ""; position: absolute; left: 50%; bottom: 37px;
+  width: 29%; height: 9px; border-radius: 50%; transform: translateX(-40%);
+  background: #08070c91; filter: blur(8px); box-shadow: 8px 7px 12px #08070c50;
+  pointer-events: none;
+}
+.drink-open { position: relative; z-index: 1; }
+.drink-visual .drink-photo { filter: drop-shadow(7px 11px 9px #0006); }
+.save-button { z-index: 2; box-shadow: inset 0 1px 0 #ffeddc15, 0 4px 10px #0002; }
+.drink-kind { color: #f0e9e0; background: #17131bc9; box-shadow: inset 0 1px 0 #fff3e511; }
+.kind-signature { color: #f3cda0; }
+.kind-zero { color: #c2dec6; }
+.card-note { z-index: 2; color: #e2d2c5; text-shadow: 0 1px 3px #0008; }
+.card-body { flex: 1; padding: 24px 24px 26px; }
+.name-button h3 { font-size: 22px; line-height: 1.26; }
+.name-button span { color: #c4bac8; }
+.card-tags { color: #c2b5bf; margin-top: 16px; }
+.card-description { color: #bfb7c5; }
+.card-heading .icon-button { background: #37303d; box-shadow: inset 0 1px 0 #ffe7d612; }
+.quiz-panel, .empty {
+  background: radial-gradient(ellipse at 0 0, #e8bc8710, transparent 60%), linear-gradient(140deg, #29242f, #1e1b26);
+  box-shadow: var(--edge-light), var(--elevation);
+}
+.quiz-option { background: linear-gradient(140deg, #302a37, #27232f); box-shadow: inset 0 1px 0 #fff0dc0d; }
+.quiz-option[aria-checked="true"] { background: linear-gradient(135deg, #48392f, #302831); }
+dialog { overflow: hidden; background: #24202b; box-shadow: inset 0 1px 0 #fff2de30, 0 24px 70px -10px #000c; }
+dialog::backdrop { background: #08070dca; backdrop-filter: blur(5px) brightness(.85); -webkit-backdrop-filter: blur(5px) brightness(.85); }
+.detail-layout { max-height: 90svh; }
+.detail-art {
+  position: relative; isolation: isolate; display: grid; place-items: center; min-height: 0; padding: 26px;
+  background: radial-gradient(ellipse at 12% 4%, #ffe0b62b, transparent 60%),
+    radial-gradient(ellipse at 100% 50%, #a9bed515, transparent 68%),
+    linear-gradient(160deg, #ffffff05, #0b09146b), var(--surface);
+}
+.detail-stage { position: relative; width: 100%; max-width: 320px; }
+.detail-shake { position: relative; display: grid; place-items: center; width: 100%; height: 350px; padding: 0; border-radius: 30px; background: none; transition: transform .18s ease-out; -webkit-tap-highlight-color: transparent; }
+.detail-shake:after { content: ""; position: absolute; z-index: 0; left: 50%; bottom: 26px; width: 31%; height: 10px; transform: translateX(-40%); border-radius: 50%; background: #08070c99; filter: blur(9px); box-shadow: 9px 9px 15px #0004; pointer-events: none; }
+.detail-shake:active { transform: scale(.98); }
+.detail-art .drink-photo { position: relative; z-index: 1; width: 100%; height: 350px; padding: 20px; object-fit: contain; transform-origin: 50% 85%; filter: drop-shadow(10px 15px 12px #0006); }
+.detail-hint { position: absolute; inset-inline: 0; top: 100%; margin: 5px 0 0; color: #cfbcae; font-size: 11px; text-align: center; pointer-events: none; }
+.detail-copy { min-height: 0; max-height: 90svh; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #6f6278 transparent; background: linear-gradient(130deg, #ffffff03, transparent 45%); }
+.close-dialog { background: #39323fc9; box-shadow: var(--edge-light); }
+.save-button, .drink-kind, .close-dialog { backdrop-filter: blur(var(--glass-blur)) saturate(.85); -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(.85); }
+.flavor-journey { background: #ffffff04; padding: 17px 16px; border-radius: 17px; box-shadow: inset 0 1px 0 #fff0dc0c; }
+.toast { background: #2b2533f2; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: var(--edge-light), 0 12px 26px -8px #000a; }
+@media (hover: hover) and (pointer: fine) {
+  .drink-card:hover { transform: translateY(-6px); box-shadow: inset 0 1px 0 #ffe5bd30, var(--raised); }
+  .drink-open:hover .drink-photo { transform: translateY(-5px) rotate(-3deg) scale(1.04); }
+  .button.primary:hover { background: linear-gradient(135deg, #f8d9b0, #ebbd8a); box-shadow: inset 0 1px 0 #fff8df99, 0 9px 22px -10px #d6a16b24; }
+}
+@media (max-width: 1000px) and (min-width: 761px) {
+  .hero { gap: 40px; }
+  .card-body { padding: 22px 19px; }
+  .name-button h3 { font-size: 20px; }
+}
+@media (max-width: 760px) {
+  body { background-attachment: scroll; background-size: 100% 1100px; background-repeat: no-repeat; }
+  :root { --header-fade-height: 122px; }
+  .hero { gap: 30px; padding-bottom: 44px; }
+  .hero-feature { box-shadow: inset 0 1px 0 #ffe2b936, 0 12px 30px -18px #000b; }
+  .hero-art { inset: 7px 16% 78px; }
+  .hero-feature:after { bottom: 85px; width: 90px; height: 9px; }
+  .hero-caption { top: 17px; right: 17px; }
+  .catalog { padding-top: 25px; }
+  .drink-grid { gap: 20px 14px; }
+  .drink-card { border-radius: 22px; box-shadow: var(--edge-light), 0 9px 20px -15px #000b; }
+  .drink-card:hover { transform: none; }
+  .drink-open:hover .drink-photo { transform: none; }
+  .drink-open:active .drink-photo { transform: scale(.96); }
+  .drink-visual:after { width: 30%; bottom: 35px; filter: blur(6px); }
+  .card-body { padding: 18px 15px 20px; }
+  .name-button h3 { font-size: 18px; }
+  .card-tags { margin-top: 14px; }
+  dialog { overflow-y: auto; }
+  .detail-layout { max-height: none; }
+  .detail-art { min-height: 290px; padding: 20px 32px 36px; }
+  .detail-copy { max-height: none; overflow: visible; }
+  .detail-shake, .detail-art .drink-photo { height: 240px; }
+  .detail-art .drink-photo { padding: 10px 20px; }
+  .detail-shake:after { bottom: 17px; height: 8px; }
+  .detail-hint { margin-top: 3px; }
+  .flavor-journey { padding: 15px 12px; }
+}
+@media (max-width: 360px) {
+  .card-body { padding-inline: 13px; }
+  .name-button h3 { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drink-card:hover, .drink-open:hover .drink-photo, .drink-open:active .drink-photo { transform: none; }
+  .detail-shake:active { transform: none; }
+}
+
+/* Seven real choices, followed by one particle reveal for both photograph and title. */
+.hero-feature { perspective: 900px; }
+.hero-art.feature-stage { inset: 10px 7% 116px; pointer-events: auto; }
+.feature-draw { position: absolute; z-index: 1; inset: 0; width: 100%; border: 0; border-radius: 23px; padding: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.feature-glass { position: absolute; inset: 0 4% 34px; display: block; transform-origin: 50% 75%; }
+.feature-glass .drink-photo { transition: transform .55s var(--spring); }
+.draw-hint { position: absolute; z-index: 4; bottom: 0; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 32px; padding: 5px 12px; white-space: nowrap; border-radius: 99px; background: #1c1820e6; color: #eac89f; font-size: 11px; box-shadow: inset 0 1px 0 #f5d7b326, 0 5px 12px #0002; pointer-events: none; }
+.draw-hint .icon { width: 14px; height: 14px; }
+.feature-draw:focus-visible, .draw-card:focus-visible { outline: 2px solid #e6bd8b; outline-offset: 3px; }
+.hero-feature .feature-info { width: calc(100% - 91px); max-width: calc(100% - 91px); pointer-events: none; }
+.feature-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.feature-meta p { margin: 0; }
+.hero-feature .hero-caption { position: static; flex-shrink: 0; padding: 3px 6px; font-size: 8px; line-height: 1; letter-spacing: 0; color: #e2cfb9; background: #17131bbf; box-shadow: none; }
+.feature-title { position: relative; display: grid; }
+.hero-feature .feature-title h2 { grid-area: 1/1; align-self: end; font-size: clamp(20px,2.6vw,28px); line-height: 1.13; text-wrap: balance; }
+.title-particles { position: absolute; left: -12px; top: -6px; width: calc(100% + 24px); height: calc(100% + 12px); pointer-events: none; }
+.hero-feature .feature-info small { display: block; margin-top: 4px; }
+.feature-detail { position: relative; z-index: 3; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; min-height: 44px; padding: 10px 12px; border-radius: 99px; font-size: 11px; color: #f1d2ae; background: #44383e; box-shadow: inset 0 1px 0 #fff0d91a, 0 8px 16px #0002; transition: background .2s, transform .3s var(--spring); }
+.feature-detail .icon { width: 16px; height: 16px; }
+.draw-deck { position: absolute; z-index: 2; inset: 0 0 34px; display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 11px; width: min(92%,322px); height: fit-content; margin: auto; perspective: 700px; }
+.draw-card { position: relative; grid-column: span 2; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px; width: 100%; min-width: 44px; height: 90px; min-height: 44px; border-radius: 14px; padding: 10px 4px 18px; background: linear-gradient(145deg,#5b4945,#29232e 80%); box-shadow: inset 0 1px 0 #f4d4ae77,inset 0 -1px 0 #08070b66,0 10px 18px -9px #000b; color: #ebc89f; transition: box-shadow .2s; }
+.draw-card:nth-child(5) { grid-column: 2/span 2; }
+.draw-card:nth-child(6) { grid-column: 4/span 2; }
+.draw-card:nth-child(7) { grid-column: 6/span 2; }
+.draw-card:before { content: ''; position: absolute; inset: 6px; border: 1px solid #eac89f30; border-radius: 9px; }
+.draw-card>.icon { width: 24px; height: 24px; }
+.draw-card>span { font-size: 6px; letter-spacing: .09em; }
+.draw-card>.draw-card-number { position: absolute; bottom: 7px; font-size: 8px; letter-spacing: .02em; color: #d6bba0; }
+.draw-card.is-picked { z-index: 10; }
+.draw-card[aria-disabled="true"] { cursor: progress; }
+.draw-particles { position: absolute; z-index: 3; left: 4%; top: 0; width: 92%; height: calc(100% - 34px); pointer-events: none; }
+.hero-feature:not([data-draw-state="revealed"]) .feature-draw, .hero-feature:not([data-draw-state="revealed"]) .hero-caption, .hero-feature:not([data-draw-state="revealed"]) .feature-detail { visibility: hidden; }
+.hero-feature:not([data-draw-state="revealed"]) .hero-caption { display: none; }
+.hero-feature[data-draw-state="revealed"] .draw-deck { visibility: hidden; }
+.hero-feature[data-draw-state="revealed"] .draw-hint { cursor: pointer; }
+.feature-announcement { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (hover:hover) and (prefers-reduced-motion:no-preference) {
+  .hero-feature[data-draw-state="choosing"] .draw-card:hover { transform: translateY(-5px) rotate(-2deg); box-shadow: inset 0 1px 0 #f4d4aeaa,0 13px 20px -8px #000b; }
+  .hero-feature[data-draw-state="choosing"] .draw-card:active { transform: translateY(-1px) scale(.95); }
+  .feature-draw:hover .drink-photo { transform: translateY(-3px) rotate(-2deg) scale(1.035); }
+  .feature-detail:hover { background: #514047; }
+  .feature-detail:active { transform: scale(.96); }
+}
+@media (max-width:760px) {
+  .hero-art.feature-stage { inset: 4px 7% 119px; }
+  .feature-glass { inset: 0 6% 32px; }
+  .draw-particles { left: 6%; width: 88%; height: calc(100% - 32px); }
+  .draw-deck { bottom: 32px; gap: 9px 7px; }
+  .draw-card { height: 67px; border-radius: 11px; gap: 4px; padding-bottom: 15px; }
+  .draw-card:before { inset: 5px; border-radius: 7px; }
+  .draw-card>.icon { width: 20px; height: 20px; }
+  .draw-card>span { font-size: 5px; }
+  .draw-card>.draw-card-number { bottom: 6px; font-size: 7px; }
+  .hero-feature .feature-title h2 { font-size: 21px; }
+  .hero-feature .feature-info { width: calc(100% - 86px); max-width: calc(100% - 86px); }
+  .hero-feature .hero-caption { font-size: 7px; padding: 3px 5px; }
+  .feature-meta { gap: 5px; }
+  .feature-detail { padding-inline: 10px; font-size: 10px; }
+  .draw-hint { min-height: 30px; font-size: 10px; }
+}
+@media (prefers-reduced-motion:reduce) { .feature-draw .drink-photo,.feature-detail,.draw-card { transition: none; } }
+
+/* A held hand of seven overlapping cards. Hover/focus extracts one from the hand. */
+.draw-deck { --draw-lift: 26px; inset: 0 0 46px; display: block; width: min(100%,420px); height: auto; margin: 0 auto; perspective: 800px; transform-style: preserve-3d; }
+.draw-card { position: absolute; top: 50%; left: calc(var(--slot)*12%); width: 28%; height: auto; min-height: 70px; aspect-ratio: .66; grid-column: auto; gap: 12px; padding: 14px 7px; border-radius: 17px; transform-origin: 50% 88%; transform: translateY(calc(-50% + var(--bend)*1px)) rotate(calc(var(--fan)*1deg)) rotateY(-8deg); z-index: calc(var(--slot) + 1); box-shadow: inset 0 1px 0 #f6dab885,inset -1px 0 0 #100d1855,2px 3px 0 #211a24,0 16px 24px -12px #000c; transition: transform .44s cubic-bezier(.22,1.12,.36,1),box-shadow .25s; }
+.draw-card:before { inset: 8px; border-radius: 11px; }
+.draw-card>.icon { width: 30px; height: 30px; }
+.draw-card>span { font-size: 7px; }
+.draw-card>.draw-card-number { top: 10px; bottom: auto; left: 11px; font-size: 10px; }
+.draw-card.is-picked { z-index: 40; box-shadow: inset 0 1px 0 #f8dfbfa6,3px 4px 0 #211a24,0 23px 32px -10px #000c; }
+.hero-feature[data-draw-state="choosing"] .draw-card:is(:focus-visible,.is-armed) { z-index: calc(var(--slot) + 1); transform: translateY(calc(-50% + var(--bend)*1px - var(--draw-lift))) rotate(calc(var(--fan)*1deg)) rotateY(-8deg); box-shadow: inset 0 1px 0 #f8dfbfa6,2px 3px 0 #211a24,0 16px 24px -12px #000c; }
+.feature-glass { bottom: 46px; }
+.draw-particles { height: calc(100% - 46px); }
+.feature-hint { position: absolute; z-index: 4; bottom: 0; left: 50%; transform: translateX(-50%); min-height: 44px; display: grid; place-items: center; white-space: nowrap; }
+.feature-hint .draw-hint { position: static; transform: none; min-height: 44px; pointer-events: auto; cursor: pointer; }
+.draw-hint-message { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; min-height: 32px; border-radius: 99px; color: #eac89f; background: #1c1820e6; font-size: 11px; box-shadow: inset 0 1px 0 #f5d7b326,0 5px 12px #0002; }
+.draw-hint-message .icon { width: 14px; height: 14px; }
+.hero-feature:not([data-draw-state="revealed"]) .feature-hint .draw-hint, .hero-feature[data-draw-state="revealed"] .draw-hint-message { display: none; }
+.hero-feature .title-particles { position: absolute; z-index: 5; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.hero-feature.is-recomposing .feature-info,.hero-feature.is-recomposing .feature-hint { opacity: 0; }
+.feature-shake { cursor: pointer; }
+@media (hover:hover) and (prefers-reduced-motion:no-preference) {
+  .hero-feature[data-draw-state="choosing"] .draw-card:hover { z-index: calc(var(--slot) + 1); transform: translateY(calc(-50% + var(--bend)*1px - var(--draw-lift))) rotate(calc(var(--fan)*1deg)) rotateY(-8deg); box-shadow: inset 0 1px 0 #f8dfbfa6,2px 3px 0 #211a24,0 16px 24px -12px #000c; }
+  .hero-feature[data-draw-state="choosing"] .draw-card:active { transform: translateY(calc(-50% + var(--bend)*1px - var(--draw-lift) + 2px)) rotate(calc(var(--fan)*1deg)) rotateY(-8deg); }
+}
+@media (max-width:760px) {
+  .draw-deck { --draw-lift: 8px; inset: 0 0 46px; width: 100%; }
+  .draw-card { height: auto; border-radius: 12px; padding: 10px 4px; gap: 7px; }
+  .draw-card:before { inset: 6px; border-radius: 8px; }
+  .draw-card>.icon { width: 23px; height: 23px; }
+  .draw-card>span { font-size: 5px; }
+  .draw-card>.draw-card-number { top: 8px; left: 8px; font-size: 8px; }
+  .feature-glass { bottom: 46px; }
+  .draw-particles { height: calc(100% - 46px); }
+  .draw-hint-message { font-size: 10px; }
+}
+@media (max-width:360px) { .draw-card { width: 26%; } }
+@media (prefers-reduced-motion:reduce) {
+  .hero-feature[data-draw-state="choosing"] .draw-card:is(:hover,:active,:focus-visible,.is-armed) { transform: translateY(calc(-50% + var(--bend)*1px)) rotate(calc(var(--fan)*1deg)); z-index: calc(var(--slot) + 1); }
+}
+
+/* Reverse reveal: drink particles re-form the same seven-card hand. */
+.hero-feature .return-particles { position:absolute; inset:0; width:100%; height:100%; z-index:4; pointer-events:none; }
+.hero-feature.is-returning .draw-deck { visibility:hidden; }
+
+/* Desktop material re-formation: the real cards stay sharp, with separate soft elevation. */
+@media (min-width:761px) {
+  .hero-feature.is-returning .draw-deck { visibility:visible; pointer-events:none; }
+  .hero-feature.is-returning .draw-card { opacity:var(--return-opacity,0); transition:none; box-shadow:inset 0 1px 0 #f6dab885,inset -1px 0 0 #100d1833,0 3px 5px -2px rgb(0 0 0 / calc(var(--return-shadow,0)*.4)),0 14px 26px -12px rgb(0 0 0 / var(--return-shadow,0)); }
+  .hero-feature .draw-card { box-shadow:inset 0 1px 0 #f6dab885,inset -1px 0 0 #100d1833,0 3px 5px -2px #0003,0 14px 26px -12px #0008; }
+  .hero-feature[data-draw-state="choosing"] .draw-card:is(:hover,:focus-visible,.is-armed) { box-shadow:inset 0 1px 0 #f8dfbfa6,inset -1px 0 0 #100d1833,0 4px 7px -3px #0003,0 17px 28px -12px #0009; }
+  .sliding-filters .filter-label { transform:none; transform-origin:50% 50%; transition:none; }
+  .sliding-filters > button.selected .filter-label { transform:none; }
+  .sliding-filters > button:active .filter-label { transform:none; }
+  .base-label { transform-origin:100% 50%; }
+  #result-count,.list-meta>span:last-child { display:inline-block; transform-origin:0 50%; }
+  .list-meta>span:last-child { transform-origin:100% 50%; }
+  .drink-open,.card-body { transform-origin:50% 60%; }
+  .card-body { transform-origin:0 0; }
+}
+@media (min-width:761px) and (prefers-reduced-motion:reduce) {
+  .sliding-filters .filter-label,.sliding-filters > button.selected .filter-label,.sliding-filters > button:active .filter-label { transform:none; transition:none; }
+}
+
+/* The selection method shares the catalog capsule and a quiet out/in handoff. */
+@media (min-width:761px) {
+  .selection-modes.sliding-filters.has-sliding-highlight > button[aria-pressed="true"] { background:transparent; box-shadow:none; }
+  .selection-modes.sliding-filters > button[aria-pressed="true"] .filter-label { transform:none; }
+  .selection-modes.sliding-filters > button:active .filter-label { transform:none; }
+  .selection-content > .quiz-layout,.selection-content > #pantry-surface { transform-origin:50% 0; }
+}
+@media (min-width:761px) and (prefers-reduced-motion:reduce) {
+  .selection-modes.sliding-filters > button[aria-pressed="true"] .filter-label,.selection-modes.sliding-filters > button:active .filter-label { transform:none; }
+}
+
+/* Arrival settles at a larger selected label; every other label keeps its original size. */
+@media (min-width:761px) {
+  .sliding-filters.has-sliding-highlight > button[aria-pressed="true"] .filter-label[data-capsule-emphasis="selected"] { transform:scale(1.065); }
+}
+
+/* Match the hero action: one smooth hover pose, with no text pulse or scale overshoot sequence. */
+.filter-surface { display:none; }
+@media (min-width:761px) {
+  .sliding-filters.has-sliding-highlight > .filter-highlight { background:none; box-shadow:none; }
+  .sliding-filters .filter-surface { display:block; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(135deg,#f0cda3,#dfb286); box-shadow:inset 0 1px 0 #ffecc780,0 3px 9px #0003; transform-origin:50% 50%; transform:translateY(0) scale(1); transition:transform .45s var(--spring),box-shadow .2s; }
+  .sliding-filters.has-sliding-highlight > button { --capsule-scale:1; --capsule-y:0px; background:transparent; box-shadow:none; }
+  .sliding-filters.has-sliding-highlight > button:before { content:''; position:absolute; z-index:0; inset:0; border-radius:inherit; background:transparent; transform:translateY(var(--capsule-y)) scale(var(--capsule-scale)); transform-origin:50% 50%; transition:transform .45s var(--spring),background .2s; pointer-events:none; }
+  .flavor-filters.has-sliding-highlight > button:before { background:#27232e; box-shadow:inset 0 1px 0 #fff1e009; }
+  .sliding-filters.has-sliding-highlight > button[aria-pressed="true"]:before { background:transparent; box-shadow:none; }
+  .sliding-filters.has-sliding-highlight > button[aria-pressed] .filter-label,
+  .sliding-filters.has-sliding-highlight > button[aria-pressed="true"] .filter-label[data-capsule-emphasis="selected"] { transform:translateY(var(--capsule-y)) scale(calc(var(--label-emphasis,1) * var(--capsule-scale))); transition:transform .45s var(--spring); }
+  .sliding-filters.has-sliding-highlight > button[aria-pressed="true"] .filter-label[data-capsule-emphasis="selected"] { --label-emphasis:1.04; }
+}
+@media (min-width:761px) and (hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference) {
+  .sliding-filters.has-sliding-highlight > button:is(:hover,:focus-visible) { --capsule-scale:1.025; --capsule-y:-2px; }
+  .sliding-filters.has-sliding-highlight > button:not([aria-pressed="true"]):is(:hover,:focus-visible):before { background:#38353f; }
+  .sliding-filters.has-sliding-highlight:has(>button[aria-pressed="true"]:is(:hover,:focus-visible)) .filter-surface { transform:translateY(-2px) scale(1.025); }
+}
+@media (min-width:761px) and (prefers-reduced-motion:reduce) {
+  .sliding-filters.has-sliding-highlight > button[aria-pressed] .filter-label,
+  .sliding-filters.has-sliding-highlight > button[aria-pressed="true"] .filter-label[data-capsule-emphasis="selected"],
+  .sliding-filters .filter-surface,.sliding-filters.has-sliding-highlight > button:before { transition:none; }
+}
