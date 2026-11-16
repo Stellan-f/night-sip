@@ -11,7 +11,7 @@ let storageAvailable = true, toastTimer, detailTrigger, detailShakeAnimation;
 const menuReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const menuMotion = {revision:0, key:null, pending:false, animations:[]};
 const selectionMotion = {revision:0, animations:[], displayed:'taste', busy:false, finish:null};
-const featuredDraw = {busy:false, revision:0, animations:[], hero:null, finish:null, frame:0, cancelParticles:null, choices:[], shake:null};
+const featuredDraw = {busy:false, revision:0, animations:[], hero:null, finish:null, frame:0, cancelParticles:null, choices:[], shake:null, preview:null};
 let featuredId;
 try { featuredId = sessionStorage.getItem('between-five-featured-v1'); } catch {}
 try {
@@ -522,6 +522,7 @@ function stopFeaturedDraw() {
   });
   featuredDraw.busy = false;
   featuredDraw.finish = null;
+  featuredDraw.preview = null;
 }
 function updateFeaturedDrink(hero) {
   const feature = $('#hero-feature');
@@ -586,15 +587,20 @@ function renderFeaturedDrink() {
   $('#hero-feature').innerHTML = `<div class="hero-art feature-stage"><button class="feature-draw feature-shake" data-shake-feature type="button" aria-label="摇一摇推荐酒杯" title="点酒杯，摇一摇"><span class="feature-glass"></span></button><div class="draw-hand-scroll" aria-label="可左右滑动的推荐手牌"><div class="draw-deck" role="group" aria-label="七张叠放的推荐牌，任选一张">${Array.from({length:7},(_,index)=>`<button class="draw-card" type="button" data-pick-feature="${index}" style="--slot:${index};--fan:${(index-3)*2.2};--bend:${Math.abs(index-3)*2}" aria-label="抽第${index+1}张推荐牌">${icon('glass')}<span>NIGHT SIP</span><span class="draw-card-number">${String(index+1).padStart(2,'0')}</span></button>`).join('')}</div></div><canvas class="draw-particles" aria-hidden="true"></canvas><div class="feature-hint"><button class="mobile-reveal" data-confirm-feature type="button" hidden><span>揭晓这张</span>${icon('arrow')}</button><span class="draw-hint-message">${icon('shuffle')}<span data-hint-copy>${window.matchMedia('(hover:none)').matches?'轻点挑牌，再点揭晓':'悬停挑选，点击揭晓'}</span></span><button class="draw-hint" type="button" data-draw-feature aria-label="再铺开七张推荐牌">${icon('shuffle')}<span data-hint-copy>再抽一杯</span></button></div></div><div class="feature-info"><div class="feature-meta"><p></p><span class="hero-caption"></span></div><div class="feature-title"><h2></h2></div><small></small></div><button class="feature-detail" type="button">查看配方 ${icon('arrow')}</button><canvas class="return-particles" aria-hidden="true"></canvas><canvas class="title-particles" aria-hidden="true"></canvas>`;
   dealFeaturedChoices();
 }
-function prepareFeaturedImage(hero) {
+function prepareFeaturedImage(hero, preloaded) {
   if (!hero.image) return Promise.resolve(true);
-  const image = new Image();
-  image.src = hero.image;
+  const image = preloaded && (!preloaded.complete || preloaded.naturalWidth) ? preloaded : new Image();
+  if (image !== preloaded) image.src = hero.image;
   if (image.complete) return Promise.resolve(image.naturalWidth > 0 ? image : null);
   return new Promise(resolve => {
-    const timer=setTimeout(()=>done(null),2400);
-    function done(result) {clearTimeout(timer);image.onload=image.onerror=null;resolve(result);}
-    image.onload=()=>done(image);image.onerror=()=>done(null);
+    const timer = setTimeout(() => done(null), 2400);
+    function done(result) {
+      clearTimeout(timer);
+      image.onload = image.onerror = null;
+      resolve(result);
+    }
+    image.onload = () => done(image);
+    image.onerror = () => done(null);
   });
 }
 function captureFeaturedCopy(hero, mode) {
@@ -706,7 +712,18 @@ function selectFeaturedCard(button,event) {
   if(featuredDraw.busy)return;
   if((isCompactViewport()||window.matchMedia('(hover:none)').matches)&&event.detail!==0&&!button.classList.contains('is-armed')){
     document.querySelectorAll('[data-pick-feature]').forEach(card=>{card.classList.remove('is-armed');card.setAttribute('aria-pressed','false');});
-    button.classList.add('is-armed');button.setAttribute('aria-pressed','true');button.focus({preventScroll:true});window.syncMobileInterface?.();return;
+    button.classList.add('is-armed');
+    button.setAttribute('aria-pressed','true');
+    button.focus({preventScroll:true});
+    window.syncMobileInterface?.();
+    const choice = featuredDraw.choices[Number(button.dataset.pickFeature)];
+    if (isCompactViewport() && choice?.image) {
+      const image = new Image();
+      image.src = choice.image;
+      image.decode?.().catch(() => {});
+      featuredDraw.preview = {id:choice.id, image};
+    }
+    return;
   }
   return drawFeaturedDrink(Number(button.dataset.pickFeature));
 }
@@ -728,9 +745,10 @@ function dissolveFeaturedCard(image,isCurrent,hero) {
   if (!context || !image?.naturalWidth) return Promise.resolve();
   const canvasRect=canvas.getBoundingClientRect(),{width,height}=canvasRect;
   if (!width || !height) return Promise.resolve();
-  const ratio=Math.min(window.devicePixelRatio||1,isCompactViewport()?1.5:2);
+  const compact = isCompactViewport();
+  const ratio = Math.min(window.devicePixelRatio||1,compact?1.25:2);
   canvas.width=Math.round(width*ratio);canvas.height=Math.round(height*ratio);context.scale(ratio,ratio);
-  const sample=document.createElement('canvas'),resolution=144;
+  const sample=document.createElement('canvas'),resolution=compact?108:144;
   sample.width=sample.height=resolution;
   const sampler=sample.getContext('2d',{willReadFrequently:true});
   if (!sampler) return Promise.resolve();
@@ -742,32 +760,52 @@ function dissolveFeaturedCard(image,isCurrent,hero) {
     const offset=(y*resolution+x)*4;
     if(pixels[offset+3]>96)targets.push({x:left+x/resolution*size,y:top+y/resolution*size,color:[pixels[offset],pixels[offset+1],pixels[offset+2]]});
   }
-  const count=Math.min(targets.length,isCompactViewport()?650:1450);
+  const count=Math.min(targets.length,compact?380:1450);
   if (!count) return Promise.resolve();
   const card=$('.draw-card.is-picked').getBoundingClientRect();
   const particles=Array.from({length:count},(_,i)=>{
     const target=targets[Math.floor(i*targets.length/count)],angle=Math.random()*Math.PI*2,spread=.25+Math.random()*.7;
-    return {...target,startX:card.left-canvasRect.left+card.width*(.075+Math.random()*.85),startY:card.top-canvasRect.top+card.height*(.075+Math.random()*.85),burstX:width/2+Math.cos(angle)*width*.5*spread,burstY:height/2+Math.sin(angle)*height*.57*spread,swirl:(Math.random()-.5)*38,seed:Math.random(),radius:.65+Math.random()*.9};
+    const seed = Math.random();
+    return {
+      ...target,
+      color:`rgb(${target.color.join(',')})`,
+      startX:card.left-canvasRect.left+card.width*(.075+Math.random()*.85),
+      startY:card.top-canvasRect.top+card.height*(.075+Math.random()*.85),
+      burstX:width/2+Math.cos(angle)*width*(compact ? .34 : .5)*spread,
+      burstY:height/2+Math.sin(angle)*height*(compact ? .4 : .57)*spread,
+      swirl:(Math.random()-.5)*(compact?30:38),
+      seed, radius:.65+Math.random()*.9
+    };
   });
   let titleLayer;
-  try {titleLayer=createFeaturedTitleParticles(hero);} catch {titleLayer=null;}
+  if (!compact) {
+    try {titleLayer=createFeaturedTitleParticles(hero);} catch {titleLayer=null;}
+  }
   const smooth=v=>{const n=Math.max(0,Math.min(1,v));return n*n*(3-2*n);};
   const mix=(a,b,t)=>a+(b-a)*t;
   return new Promise(resolve=>{
-    let start;featuredDraw.cancelParticles=resolve;
+    let start, forming = false;
+    featuredDraw.cancelParticles=resolve;
     function frame(time){
       if(!isCurrent()){resolve();return;}
       start??=time;
-      const progress=Math.min((time-start)/1380,1);
-      if(progress>=.64)$('#hero-feature').dataset.drawPhase='forming';
-      const scatter=1-Math.pow(1-Math.min(progress/.33,1),3),gather=smooth((progress-.3)/.58),photograph=smooth((progress-.76)/.24);
+      const progress=Math.min((time-start)/(compact?920:1380),1);
+      if(!forming && progress>=(compact ? .55 : .64)){
+        $('#hero-feature').dataset.drawPhase='forming';
+        forming = true;
+      }
+      const scatter=1-Math.pow(1-Math.min(progress/(compact ? .38 : .33),1),3);
+      const gather=smooth((progress-(compact ? .17 : .3))/(compact ? .68 : .58));
+      const photograph=smooth((progress-(compact ? .63 : .76))/(compact ? .33 : .24));
+      const arcScale=Math.sin(gather*Math.PI);
+      const fadeIn=smooth(progress/.08);
       context.clearRect(0,0,width,height);
       for(const p of particles){
-        const arc=Math.sin(gather*Math.PI)*p.swirl;
+        const arc=arcScale*p.swirl;
         const x=mix(mix(p.startX,p.burstX,scatter),p.x,gather)+arc,y=mix(mix(p.startY,p.burstY,scatter),p.y,gather)-Math.abs(arc)*.45;
-        const rgb=p.color;
-        context.globalAlpha=(1-photograph)*(.48+p.seed*.52)*smooth(progress/.08);
-        context.fillStyle=`rgb(${rgb.join(',')})`;context.beginPath();context.arc(x,y,mix(p.radius,size/resolution*.75,gather),0,Math.PI*2);context.fill();
+        const visible=compact?smooth((progress-p.seed*.09)/.14):fadeIn;
+        context.globalAlpha=(1-photograph)*(.48+p.seed*.52)*visible;
+        context.fillStyle=p.color;context.beginPath();context.arc(x,y,mix(p.radius,size/resolution*.75,gather),0,Math.PI*2);context.fill();
       }
       if(photograph>0){context.globalAlpha=photograph;context.drawImage(image,left,top,size,size);}
       context.globalAlpha=1;
@@ -782,18 +820,29 @@ async function drawFeaturedDrink(index) {
   if(featuredDraw.busy||state.view!=='menu'||$('#hero-feature').dataset.drawState!=='choosing')return;
   const next=featuredDraw.choices[index];
   if(!next)return;
+  const compact = isCompactViewport();
+  const preview = featuredDraw.preview;
   stopFeaturedDraw();
+  const feature = $('#hero-feature');
+  const cards = [...document.querySelectorAll('[data-pick-feature]')];
+  // Read the lifted card's position before leaving the choosing state.
+  const armedTransforms = compact && !menuReducedMotion.matches && feature.animate
+    ? cards.map(card => getComputedStyle(card).transform)
+    : null;
+  const confirmButton = $('[data-confirm-feature]');
+  const revealHadFocus = compact && document.activeElement === confirmButton;
   const revision=featuredDraw.revision,isCurrent=()=>revision===featuredDraw.revision;
   featuredDraw.busy=true;
-  const feature=$('#hero-feature');feature.dataset.drawState='drawing';feature.dataset.drawPhase='selected';feature.setAttribute('aria-busy','true');
+  feature.dataset.drawState='drawing';feature.dataset.drawPhase='selected';feature.setAttribute('aria-busy','true');
   document.querySelectorAll('[data-pick-feature]').forEach(card=>card.setAttribute('aria-disabled','true'));
 
   $('#feature-announcement').textContent=`正在揭晓第${index+1}张牌的推荐。`;
-  const ready=prepareFeaturedImage(next);
+  const ready = prepareFeaturedImage(next, preview?.id === next.id ? preview.image : null);
   const animate=(node,frames,options)=>{const animation=node.animate(frames,options);featuredDraw.animations.push(animation);return animation.finished.catch(()=>{});};
   const reveal=()=>{
     if(!isCurrent())return;
     stopFeaturedDraw();updateFeaturedDrink(next);
+    if(revealHadFocus && [confirmButton,document.body].includes(document.activeElement)) $('[data-draw-feature]').focus({preventScroll:true});
     $('#feature-announcement').textContent=`今日为你抽到：${next.cn}，${next.tag}。可以查看配方，或再铺开七张牌。`;
   };
   const recover=()=>{
@@ -804,13 +853,23 @@ async function drawFeaturedDrink(index) {
   featuredDraw.finish=async()=>{const image=await ready;if(!isCurrent())return;if(image)reveal();else recover();};
   try{
     if(!menuReducedMotion.matches&&feature.animate){
-      const cards=[...document.querySelectorAll('[data-pick-feature]')],selected=cards[index];
+      const selected=cards[index];
       selected.classList.add('is-picked');
       const target=$('.draw-particles').getBoundingClientRect(),deck=$('.draw-deck').getBoundingClientRect();
       const dx=target.left+target.width/2-deck.left-selected.offsetLeft-selected.offsetWidth/2;
       const dy=target.top+target.height/2-deck.top-selected.offsetTop-selected.offsetHeight/2;
       await Promise.all(cards.map((card,i)=>{
-        const from=getComputedStyle(card).transform;
+        const from=armedTransforms?.[i] ?? getComputedStyle(card).transform;
+        if(compact){
+          const destination=`translate3d(${dx}px,${dy}px,0) rotate(-4deg) scale(1.045)`;
+          const frames=i===index
+            ? [{opacity:1,transform:from},{opacity:1,transform:destination}]
+            : [{opacity:1,transform:from},{opacity:0,transform:`${from} translateY(8px) scale(.98)`}];
+          return animate(card,frames,{
+            duration:i===index?330:175, delay:i===index?0:Math.abs(i-index)*9,
+            easing:'cubic-bezier(.2,.75,.25,1)', fill:'both'
+          });
+        }
         const frames=i===index?[
           {opacity:1,transform:from,offset:0},
           {opacity:1,transform:`translate3d(${dx}px,${dy-5}px,70px) rotateX(8deg) rotateY(18deg) rotateZ(-5deg) scale(1.12)`,offset:.7},
@@ -825,7 +884,7 @@ async function drawFeaturedDrink(index) {
     if(!image)throw new Error('featured-image-unavailable');
     if(!menuReducedMotion.matches&&feature.animate){
       feature.dataset.drawPhase='particles';
-      await Promise.all([animate($('.draw-card.is-picked'),[{opacity:1},{opacity:0}],{duration:240,fill:'forwards'}),dissolveFeaturedCard(image,isCurrent,next)]);
+      await Promise.all([animate($('.draw-card.is-picked'),[{opacity:1},{opacity:0}],{duration:compact?200:240,easing:compact?'ease-out':'linear',fill:'forwards'}),dissolveFeaturedCard(image,isCurrent,next)]);
     }
     reveal();
   }catch{recover();}
@@ -837,9 +896,10 @@ function featuredReturnRoundRect(context,x,y,width,height,radius) {
 }
 function featuredReturnCardFace(card) {
   const width=card.offsetWidth,height=card.offsetHeight,computed=getComputedStyle(card);
-  const canvas=document.createElement('canvas');canvas.width=Math.ceil(width*2);canvas.height=Math.ceil(height*2);
+  const ratio = isCompactViewport()?1:2;
+  const canvas=document.createElement('canvas');canvas.width=Math.ceil(width*ratio);canvas.height=Math.ceil(height*ratio);
   const context=canvas.getContext('2d');if(!context)return null;
-  context.scale(2,2);
+  context.scale(ratio,ratio);
   const colors=computed.backgroundImage.match(/rgba?\([^)]*\)|#[\da-f]+/gi)||['#5b4945','#29232e'];
   const gradient=context.createLinearGradient(0,0,width,height);gradient.addColorStop(0,colors[0]);gradient.addColorStop(1,colors[1]||colors[0]);
   featuredReturnRoundRect(context,0,0,width,height,parseFloat(computed.borderRadius)||14);context.fillStyle=gradient;context.fill();
@@ -887,7 +947,9 @@ function captureFeaturedReturnHand() {
     const rootRect=clone.getBoundingClientRect(),deck=clone.querySelector('.draw-deck'),deckRect=deck.getBoundingClientRect(),deckStyle=getComputedStyle(deck);
     const perspective=parseFloat(deckStyle.perspective)||800,origin=deckStyle.perspectiveOrigin.split(' ').map(parseFloat);
     const hand=[...clone.querySelectorAll('.draw-card')];
-    for(const card of isCompactViewport()?hand:hand.reverse()) {
+    const compact = isCompactViewport();
+    const strips = compact?1:5;
+    for(const card of compact?hand:hand.reverse()) {
       const face=featuredReturnCardFace(card);if(!face)continue;
       const computed=getComputedStyle(card),matrix=new DOMMatrix(computed.transform),pivot=computed.transformOrigin.split(' ').map(parseFloat);
       const project=(x,y)=>{
@@ -895,9 +957,9 @@ function captureFeaturedReturnHand() {
         const px=point.x+pivot[0]+card.offsetLeft,py=point.y+pivot[1]+card.offsetTop,scale=perspective/(perspective-point.z);
         return {x:deckRect.left-rootRect.left+origin[0]+(px-origin[0])*scale,y:deckRect.top-rootRect.top+origin[1]+(py-origin[1])*scale};
       };
-      // Small strips preserve the CSS perspective instead of stretching one flat rectangle.
-      for(let row=0;row<5;row++) {
-        const y0=face.height*row/5,y1=face.height*(row+1)/5;
+      // Desktop perspective needs small strips. The mobile cards use flat transforms.
+      for(let row=0;row<strips;row++) {
+        const y0=face.height*row/strips,y1=face.height*(row+1)/strips;
         const strip=[{x:0,y:y0},{x:face.width,y:y0},{x:face.width,y:y1},{x:0,y:y1}],target=strip.map(point=>project(point.x,point.y));
         featuredReturnTriangle(context,face,[strip[0],strip[1],strip[2]],[target[0],target[1],target[2]]);
         featuredReturnTriangle(context,face,[strip[0],strip[2],strip[3]],[target[0],target[2],target[3]]);
@@ -909,7 +971,8 @@ function captureFeaturedReturnHand() {
 function buildFeaturedReturnLayers() {
   const feature=$('#hero-feature'),bounds=feature.getBoundingClientRect(),image=$('.feature-glass .drink-photo');
   if(!image?.naturalWidth)return null;
-  const ratio=Math.min(window.devicePixelRatio||1,isCompactViewport()?1.5:2);
+  const compact = isCompactViewport();
+  const ratio=Math.min(window.devicePixelRatio||1,compact?1.25:2);
   const from=document.createElement('canvas');from.width=Math.ceil(bounds.width*ratio);from.height=Math.ceil(bounds.height*ratio);
   const source=from.getContext('2d',{willReadFrequently:true});if(!source)return null;
   source.scale(ratio,ratio);
@@ -922,7 +985,7 @@ function buildFeaturedReturnLayers() {
     return points;
   };
   const fromPoints=sample(from,ratio),toPoints=sample(to);if(!fromPoints.length||!toPoints.length)return null;
-  const count=Math.min(Math.max(fromPoints.length,toPoints.length),isCompactViewport()?800:1700);
+  const count=Math.min(Math.max(fromPoints.length,toPoints.length),compact?450:1700);
   const center={x:glass.left-bounds.left+glass.width/2,y:glass.top-bounds.top+glass.height/2};
   const particles=Array.from({length:count},(_,index)=>{
     const angle=Math.random()*Math.PI*2,distance=24+Math.random()*Math.min(bounds.width*.32,150);
@@ -936,8 +999,8 @@ async function restartFeaturedChoices() {
   const feature=$('#hero-feature');
   if(featuredDraw.busy||state.view!=='menu'||feature.dataset.drawState!=='revealed')return;
   $('.draw-hand-scroll')?.scrollTo?.({left:0,behavior:'instant'});
-  // Mobile uses the same return, with fewer particles and sharp native cards.
-  if(menuReducedMotion.matches) {dealFeaturedChoices(true);return;}
+  const compact = isCompactViewport();
+  if(menuReducedMotion.matches || (compact && !feature.animate)) {dealFeaturedChoices(true);return;}
   stopFeaturedDraw();featuredDraw.busy=true;
   const revision=featuredDraw.revision,isCurrent=()=>revision===featuredDraw.revision;
   let dealt=false;
@@ -951,35 +1014,61 @@ async function restartFeaturedChoices() {
   featuredDraw.finish=complete;
   try {
     const layer=buildFeaturedReturnLayers();if(!layer){complete();return;}
-    const text=createFeaturedTitleParticles(null,'choosing');
+    const text=compact?null:createFeaturedTitleParticles(null,'choosing');
     const {context,w,h,from,particles}=layer;
     const cards=[...document.querySelectorAll('[data-pick-feature]')];
-    cards.forEach(card=>{card.classList.remove('is-picked','is-armed');card.style.setProperty('--return-opacity','0');card.style.setProperty('--return-shadow','0');});
+    cards.forEach(card=>{
+      card.classList.remove('is-picked','is-armed');
+      if (!compact) {
+        card.style.setProperty('--return-opacity','0');
+        card.style.setProperty('--return-shadow','0');
+      }
+    });
     context.drawImage(from,0,0,w,h);drawFeaturedTitleParticles(text,0);
     feature.dataset.drawState='returning';feature.dataset.drawPhase='returning-scatter';feature.classList.add('is-returning');feature.setAttribute('aria-busy','true');
     document.querySelectorAll('[data-pick-feature]').forEach(card=>card.setAttribute('aria-disabled','true'));
     $('#feature-announcement').textContent='酒杯正在散成粒子，重新组成七张推荐牌。';
+    if(compact){
+      cards.forEach((card,index)=>{
+        const animation = card.animate([{opacity:0},{opacity:1}],{
+          delay:490+Math.abs(index-3)*18, duration:355, easing:'cubic-bezier(.2,.7,.25,1)', fill:'both'
+        });
+        animation.finished.catch(()=>{});
+        featuredDraw.animations.push(animation);
+      });
+    }
     const smooth=value=>{const t=Math.max(0,Math.min(1,value));return t*t*(3-2*t);},mix=(a,b,t)=>a+(b-a)*t;
     await new Promise(resolve=>{
-      let start;featuredDraw.cancelParticles=resolve;
+      let start, forming = false;
+      featuredDraw.cancelParticles=resolve;
       function frame(time) {
         if(!isCurrent()){resolve();return;}
         start??=time;
-        const progress=Math.min((time-start)/1680,1),scatter=1-Math.pow(1-Math.min(progress/.34,1),3),gather=smooth((progress-.27)/.5),material=smooth((progress-.58)/.29);
-        // Native HTML remains sharp at every density; only its material and soft shadow emerge.
-        cards.forEach((card,index)=>{
-          const formed=smooth((progress-.55-Math.abs(index-3)*.014)/.29);
-          card.style.setProperty('--return-opacity',formed.toFixed(4));
-          card.style.setProperty('--return-shadow',(smooth((progress-.66)/.27)*.48).toFixed(4));
-        });
-        if(progress>=.52&&!dealt)feature.dataset.drawPhase='returning-forming';
+        const progress=Math.min((time-start)/(compact?1080:1680),1);
+        const scatter=1-Math.pow(1-Math.min(progress/.34,1),3);
+        const gather=smooth((progress-(compact ? .17 : .27))/(compact ? .63 : .5));
+        const material=smooth((progress-.58)/.29);
+        if(!compact){
+          const shadow=(smooth((progress-.66)/.27)*.48).toFixed(4);
+          cards.forEach((card,index)=>{
+            const formed=smooth((progress-.55-Math.abs(index-3)*.014)/.29);
+            card.style.setProperty('--return-opacity',formed.toFixed(4));
+            card.style.setProperty('--return-shadow',shadow);
+          });
+        }
+        if(!forming && progress>=(compact ? .45 : .52)){
+          feature.dataset.drawPhase='returning-forming';
+          forming = true;
+        }
         context.clearRect(0,0,w,h);
         context.globalAlpha=1-smooth(progress/.22);context.drawImage(from,0,0,w,h);
+        const arcScale=Math.sin(gather*Math.PI);
+        const particleOpacity=(1-material)*smooth(progress/.08);
         for(const particle of particles){
-          const arc=Math.sin(gather*Math.PI)*particle.swirl;
+          const arc=arcScale*particle.swirl;
           const x=mix(mix(particle.start.x,particle.burst.x,scatter),particle.target.x,gather)+arc,y=mix(mix(particle.start.y,particle.burst.y,scatter),particle.target.y,gather)-Math.abs(arc)*.35;
           const color=particle.start.color.map((channel,index)=>Math.round(mix(channel,particle.target.color[index],gather)));
-          context.fillStyle=`rgb(${color.join(',')})`;context.globalAlpha=(1-material)*smooth(progress/.08)*mix(particle.start.alpha,particle.target.alpha,gather);
+          context.fillStyle=`rgb(${color.join(',')})`;context.globalAlpha=particleOpacity*mix(particle.start.alpha,particle.target.alpha,gather);
           context.beginPath();context.arc(x,y,1.1,0,Math.PI*2);context.fill();
         }
         context.globalAlpha=1;

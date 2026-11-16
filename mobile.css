@@ -34,6 +34,7 @@
   .pantry-entry { order:5; justify-content:center; min-height:48px; padding:10px 16px; margin:0; border-radius:17px; background:#28222d; font-size:13px; }
   .hero-art.feature-stage { inset:8px 12px 124px; }
   .feature-glass { inset:0 9% 48px; }
+  .draw-particles { left:9%; width:82%; height:calc(100% - 48px); }
   .draw-hand-scroll { position:absolute; inset:0 0 46px; display:block; overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; scrollbar-width:none; border-radius:16px; }
   .draw-hand-scroll::-webkit-scrollbar { display:none; }
   .draw-deck { position:relative; inset:auto; width:max(calc(100% - 20px),392px); height:100%; margin:0 10px; transform-style:flat; }
@@ -43,6 +44,8 @@
     transform:translateY(calc(-50% + var(--bend)*1px)) rotate(calc(var(--fan)*1deg));
     z-index:calc(var(--slot) + 1);
   }
+  .hero-feature .draw-card { transition:transform .24s cubic-bezier(.2,.75,.25,1),box-shadow .2s ease-out; }
+  .hero-feature[data-draw-state="drawing"] .draw-card { transition:none; }
   .hero-feature[data-draw-state="choosing"] .draw-card:is(:focus-visible,.is-armed) {
     transform:translateY(calc(-50% + var(--bend)*1px - var(--draw-lift))) rotate(calc(var(--fan)*1deg));
   }
@@ -59,19 +62,26 @@
   .hero-feature .feature-info { width:calc(100% - 76px); max-width:calc(100% - 76px); }
   .hero-feature .feature-title h2 { font-size:clamp(21px,5.8vw,26px); line-height:1.16; overflow-wrap:anywhere; }
   .hero-feature[data-draw-state="choosing"] .feature-detail { display:none; }
-  .hero-feature[data-draw-state="choosing"] .feature-info { width:100%; max-width:100%; }
+  .hero-feature:is([data-draw-state="choosing"],[data-draw-state="drawing"]) .feature-info { width:100%; max-width:100%; }
+  @media (prefers-reduced-motion:no-preference) {
+    .hero-feature .feature-info { transition:opacity .22s ease-out,transform .24s cubic-bezier(.2,.75,.25,1); }
+    .hero-feature:is([data-draw-state="drawing"],.is-returning) .feature-info { opacity:0; transform:translateY(5px); }
+    .mobile-reveal:not([hidden]),
+    .hero-feature[data-draw-state="revealed"] :is(.feature-detail,.draw-hint) { animation:mobile-feature-enter .22s ease-out backwards; }
+  }
   .hero-feature .feature-info p { font-size:11px; }
   .hero-feature .feature-info small { font-size:12px; line-height:1.55; }
   .hero-feature .hero-caption { font-size:9px; padding:4px 6px; }
   .feature-meta { flex-wrap:wrap; gap:5px; }
   .feature-detail { min-width:52px; min-height:48px; padding:10px; font-size:11px; }
   .hero-feature.is-returning .draw-deck { visibility:visible; pointer-events:none; }
-  .hero-feature.is-returning .draw-card { opacity:var(--return-opacity,0); transition:none; box-shadow:inset 0 1px 0 #f6dab870,0 12px 24px -12px rgb(0 0 0 / var(--return-shadow,0)); }
+  .hero-feature.is-returning .draw-card { opacity:0; transition:none; box-shadow:var(--mobile-card-shadow); }
   .hero-feature:not([data-draw-state="choosing"]) .draw-hand-scroll { overflow:hidden; }
   /* Mobile card lighting: one soft upper-left source, no solid offset shadow slabs. */
   .hero-feature .draw-card {
     background:linear-gradient(155deg,#51464a 0%,#38313c 48%,#292530 100%);
-    box-shadow:inset 0 1px 0 #f9dec03d,inset 1px 0 0 #ffe9cb12,0 3px 8px -4px #07050b60;
+    --mobile-card-shadow:inset 0 1px 0 #f9dec03d,inset 1px 0 0 #ffe9cb12,0 3px 8px -4px #07050b60;
+    box-shadow:var(--mobile-card-shadow);
   }
   .hero-feature .draw-card:before { border-color:#eac89f26; }
   .hero-feature[data-draw-state="choosing"] .draw-card:is(:hover,:active,:focus-visible,.is-armed) {
@@ -80,9 +90,6 @@
   .hero-feature .draw-card.is-picked {
     z-index:40;
     box-shadow:inset 0 1px 0 #fae4c95c,0 9px 18px -8px #07050b85;
-  }
-  .hero-feature.is-returning .draw-card {
-    box-shadow:inset 0 1px 0 #f9dec03d,inset 1px 0 0 #ffe9cb12,0 3px 8px -4px rgb(7 5 11 / calc(var(--return-shadow,0)*.7833));
   }
   .hero-feature:after { transition:opacity .28s ease-out; }
   .hero-feature:not([data-draw-state="revealed"]):after { opacity:0; }
@@ -194,6 +201,11 @@
   .recipe-source { font-size:12px; }
   @keyframes mobile-detail-in { from { opacity:0; transform:translateY(25px); } to { opacity:1; transform:translateY(0); } }
 }
+@keyframes mobile-feature-enter {
+  from { opacity:0; transform:translateY(4px); }
+  to { opacity:1; transform:translateY(0); }
+}
+
 /* Portrait hand: all seven cards fit, with a slimmer, quieter silhouette. */
 @media (max-width:760px) and (orientation:portrait) {
   .hero-feature { height:342px; }
@@ -228,7 +240,7 @@
   .drink-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
 @media (prefers-reduced-motion:reduce) {
-  .mobile-reveal,.pantry-group > summary:after { transition:none; }
+  .mobile-reveal,.pantry-group > summary:after,.hero-feature .draw-card { transition:none; }
   dialog { animation:none; }
   .hero-feature:after { transition:none; }
   .hero-feature[data-draw-state="choosing"] .draw-card:is(:hover,:active,:focus-visible,.is-armed) { transform:translateY(calc(-50% + var(--bend)*1px)) rotate(calc(var(--fan)*1deg)); }
