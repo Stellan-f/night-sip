@@ -603,7 +603,7 @@ function prepareFeaturedImage(hero, preloaded) {
     image.onerror = () => done(null);
   });
 }
-function captureFeaturedCopy(hero, mode) {
+function captureFeaturedCopy(hero, mode, compact) {
   const feature=$('#hero-feature'),rect=feature.getBoundingClientRect();
   const clone=feature.cloneNode(true);
   clone.classList.remove('is-recomposing','is-returning');clone.setAttribute('aria-hidden','true');
@@ -632,6 +632,7 @@ function captureFeaturedCopy(hero, mode) {
     const context=bitmap.getContext('2d',{willReadFrequently:true});
     if(!context)return null;
     const leaves=clone.querySelectorAll('.feature-meta p,.hero-caption,.feature-title h2,.feature-info small,[data-hint-copy],.mobile-reveal > span,.feature-detail');
+    let firstRow = bitmap.height, lastRow = 0;
     for(const leaf of leaves){
       const computed=getComputedStyle(leaf);
       if(!leaf.getClientRects().length||computed.visibility==='hidden'||computed.display==='none')continue;
@@ -640,34 +641,63 @@ function captureFeaturedCopy(hero, mode) {
       context.font=`${computed.fontWeight} ${computed.fontSize} ${computed.fontFamily}`;
       context.fillStyle=computed.color;context.textBaseline='alphabetic';
       const range=document.createRange(),text=textNode.textContent;
+      if (compact) {
+        range.selectNodeContents(textNode);
+        const lines = range.getClientRects();
+        for (const line of lines) {
+          firstRow = Math.min(firstRow, Math.floor(line.top-bounds.top)-3);
+          lastRow = Math.max(lastRow, Math.ceil(line.bottom-bounds.top)+3);
+        }
+        const spacing = computed.letterSpacing === 'normal' ? '0px' : computed.letterSpacing;
+        const canSpace = 'letterSpacing' in context;
+        // Use glyph positions when line wrapping or unsupported spacing affects the layout.
+        if (lines.length === 1 && (canSpace || parseFloat(spacing) === 0)) {
+          const line = lines[0];
+          if (canSpace) context.letterSpacing = spacing;
+          const descent = context.measureText(text).fontBoundingBoxDescent || 3;
+          context.fillText(text, line.left-bounds.left, line.bottom-bounds.top-descent);
+          if (canSpace) context.letterSpacing = '0px';
+          continue;
+        }
+      }
       for(let i=0;i<text.length;i++){
         range.setStart(textNode,i);range.setEnd(textNode,i+1);
         const glyph=range.getBoundingClientRect(),descent=context.measureText(text[i]).fontBoundingBoxDescent||3;
         context.fillText(text[i],glyph.left-bounds.left,glyph.bottom-bounds.top-descent);
       }
     }
-    const pixels=context.getImageData(0,0,bitmap.width,bitmap.height).data,points=[];
-    for(let y=0;y<bitmap.height;y+=2)for(let x=0;x<bitmap.width;x+=2){
+    const top = compact ? Math.max(0,firstRow) : 0;
+    const height = compact ? Math.min(bitmap.height,lastRow)-top : bitmap.height;
+    if (height <= 0) return null;
+    const pixels=context.getImageData(0,top,bitmap.width,height).data,points=[];
+    for(let y=0;y<height;y+=2)for(let x=0;x<bitmap.width;x+=2){
       const offset=(y*bitmap.width+x)*4;
-      if(pixels[offset+3]>70)points.push({x,y,color:[pixels[offset],pixels[offset+1],pixels[offset+2]],alpha:pixels[offset+3]/255});
+      if(pixels[offset+3]>70)points.push({x,y:y+top,color:[pixels[offset],pixels[offset+1],pixels[offset+2]],alpha:pixels[offset+3]/255});
     }
     return {bitmap,points};
   }finally{clone.remove();}
 }
+function featuredTitleColor(start, target, progress) {
+  const mix = (a,b) => Math.round(a+(b-a)*progress);
+  return `rgb(${mix(start[0],target[0])},${mix(start[1],target[1])},${mix(start[2],target[2])})`;
+}
 function createFeaturedTitleParticles(hero, mode) {
-  const from=captureFeaturedCopy(),to=captureFeaturedCopy(hero,mode);
+  const compact = isCompactViewport();
+  const from=captureFeaturedCopy(null,null,compact),to=captureFeaturedCopy(hero,mode,compact);
   if(!from?.points.length||!to?.points.length)return null;
   const canvas=$('.title-particles'),rect=$('#hero-feature').getBoundingClientRect();
-  const ratio=Math.min(window.devicePixelRatio||1,isCompactViewport()?1.5:2),w=rect.width,h=rect.height;
+  const ratio=Math.min(window.devicePixelRatio||1,compact?1.25:2),w=rect.width,h=rect.height;
   canvas.width=Math.ceil(w*ratio);canvas.height=Math.ceil(h*ratio);
   const context=canvas.getContext('2d');if(!context)return null;
   context.scale(ratio,ratio);
-  const count=Math.min(Math.max(from.points.length,to.points.length),isCompactViewport()?400:1100);
-  const points=Array.from({length:count},(_,i)=>({
-    start:from.points[Math.floor(i*from.points.length/count)],
-    target:to.points[Math.floor(i*to.points.length/count)],
-    dx:(Math.random()-.5)*28,dy:(Math.random()-.5)*20
-  }));
+  const count=Math.min(Math.max(from.points.length,to.points.length),compact?400:1100);
+  const points=Array.from({length:count},(_,i)=>{
+    const start=from.points[Math.floor(i*from.points.length/count)];
+    const target=to.points[Math.floor(i*to.points.length/count)];
+    // Reuse the color steps on mobile instead of parsing a new color each frame.
+    const colors=compact ? Array.from({length:9},(_,step)=>featuredTitleColor(start.color,target.color,step/8)) : null;
+    return {start,target,colors,dx:(Math.random()-.5)*28,dy:(Math.random()-.5)*20};
+  });
   $('#hero-feature').classList.add('is-recomposing');
   $('.feature-info').setAttribute('aria-hidden','true');
   return {context,w,h,from,to,points};
@@ -678,17 +708,26 @@ function drawFeaturedTitleParticles(layer,progress) {
   const {context,w,h,from,to,points}=layer;
   const gather=smooth((progress-.28)/.6),out=1-smooth(progress/.25),photo=smooth((progress-.76)/.24);
   context.clearRect(0,0,w,h);
-  context.globalAlpha=out;context.drawImage(from.bitmap,0,0,w,h);
-  const arc=Math.sin(gather*Math.PI);
-  for(const p of points){
-    const color=p.start.color.map((channel,i)=>Math.round(channel+(p.target.color[i]-channel)*gather));
-    context.fillStyle=`rgb(${color.join(',')})`;
-    context.globalAlpha=(1-photo)*smooth(progress/.12)*(p.start.alpha+(p.target.alpha-p.start.alpha)*gather);
-    const x=p.start.x+(p.target.x-p.start.x)*gather+p.dx*arc;
-    const y=p.start.y+(p.target.y-p.start.y)*gather+p.dy*arc;
-    context.beginPath();context.arc(x,y,.9,0,Math.PI*2);context.fill();
+  if (out > 0) {
+    context.globalAlpha=out;
+    context.drawImage(from.bitmap,0,0,w,h);
   }
-  context.globalAlpha=photo;context.drawImage(to.bitmap,0,0,w,h);context.globalAlpha=1;
+  const opacity=(1-photo)*smooth(progress/.12);
+  if (opacity > 0) {
+    const arc=Math.sin(gather*Math.PI),colorStep=Math.round(gather*8);
+    for(const p of points){
+      context.fillStyle=p.colors ? p.colors[colorStep] : featuredTitleColor(p.start.color,p.target.color,gather);
+      context.globalAlpha=opacity*(p.start.alpha+(p.target.alpha-p.start.alpha)*gather);
+      const x=p.start.x+(p.target.x-p.start.x)*gather+p.dx*arc;
+      const y=p.start.y+(p.target.y-p.start.y)*gather+p.dy*arc;
+      context.beginPath();context.arc(x,y,.9,0,Math.PI*2);context.fill();
+    }
+  }
+  if (photo > 0) {
+    context.globalAlpha=photo;
+    context.drawImage(to.bitmap,0,0,w,h);
+  }
+  context.globalAlpha=1;
 }
 function shakeFeaturedDrink() {
   if(featuredDraw.busy||$('#hero-feature').dataset.drawState!=='revealed')return;
@@ -778,9 +817,8 @@ function dissolveFeaturedCard(image,isCurrent,hero) {
     };
   });
   let titleLayer;
-  if (!compact) {
-    try {titleLayer=createFeaturedTitleParticles(hero);} catch {titleLayer=null;}
-  }
+  try {titleLayer=createFeaturedTitleParticles(hero);} catch {titleLayer=null;}
+  drawFeaturedTitleParticles(titleLayer,0);
   const smooth=v=>{const n=Math.max(0,Math.min(1,v));return n*n*(3-2*n);};
   const mix=(a,b,t)=>a+(b-a)*t;
   return new Promise(resolve=>{
@@ -1014,7 +1052,8 @@ async function restartFeaturedChoices() {
   featuredDraw.finish=complete;
   try {
     const layer=buildFeaturedReturnLayers();if(!layer){complete();return;}
-    const text=compact?null:createFeaturedTitleParticles(null,'choosing');
+    let text;
+    try {text=createFeaturedTitleParticles(null,'choosing');} catch {text=null;}
     const {context,w,h,from,particles}=layer;
     const cards=[...document.querySelectorAll('[data-pick-feature]')];
     cards.forEach(card=>{
