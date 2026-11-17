@@ -45,12 +45,13 @@
     if(state.view==='quiz'&&state.selectionMode==='pantry')renderPantry();
     syncMobileInterface();
   });
-  let layoutWidth=window.innerWidth;
+  let layoutWidth=window.innerWidth,layoutHeight=window.innerHeight;
   window.addEventListener('resize',()=>{
-    if(window.innerWidth===layoutWidth)return;
-    layoutWidth=window.innerWidth;
+    if(window.innerWidth===layoutWidth&&window.innerHeight===layoutHeight)return;
+    layoutWidth=window.innerWidth;layoutHeight=window.innerHeight;
     selectionMotion.finish?.(false);featuredDraw.finish?.();
     syncMobileInterface();
+    queueFeaturedReturnPreparation();
   },{passive:true});
   const updateKeyboard=()=>{
     const field=document.activeElement?.matches('input,textarea');

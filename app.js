@@ -10,8 +10,15 @@ const categoryNames = {classic:'经典', signature:'原创特调', zero:'无酒�
 let storageAvailable = true, toastTimer, detailTrigger, detailShakeAnimation;
 const menuReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const menuMotion = {revision:0, key:null, pending:false, animations:[]};
+const viewMotion = {revision:0, animation:null};
+const detailMotion = {revision:0, animations:[], closing:false, overflow:''};
 const selectionMotion = {revision:0, animations:[], displayed:'taste', busy:false, finish:null};
-const featuredDraw = {busy:false, revision:0, animations:[], hero:null, finish:null, frame:0, cancelParticles:null, choices:[], shake:null, preview:null};
+const featuredDraw = {busy:false, revision:0, animations:[], hero:null, finish:null, frame:0, cancelParticles:null, choices:[], shake:null};
+const featuredReturnCache = {key:null, model:null, timer:0};
+const featuredGlyphCache = new Map();
+const FEATURED_GATHER_MS=1780, FEATURED_RESOLVE_MS=360;
+const FEATURED_PHOTO_START_MS=FEATURED_GATHER_MS*.92;
+const FEATURED_REVEAL_MS=FEATURED_PHOTO_START_MS+FEATURED_RESOLVE_MS;
 let featuredId;
 try { featuredId = sessionStorage.getItem('between-five-featured-v1'); } catch {}
 try {
@@ -23,8 +30,9 @@ function toast(message) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove('visible'), 3000);
 }
 function glassIllustration(d) {
-  if (d.art) return d.art.replace('<svg ', '<svg class="glass-art" aria-hidden="true" focusable="false" ');
-  return `<svg class="glass-art" viewBox="0 0 54 54" fill="none" stroke="var(--drink)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#i-glass" x="15" y="15" width="24" height="24"/></svg>`;
+  return d.art
+    ? d.art.replace('<svg ', '<svg class="glass-art" aria-hidden="true" focusable="false" ')
+    : `<svg class="glass-art" viewBox="0 0 54 54" fill="none" stroke="var(--drink)" stroke-width="1.2" aria-hidden="true" focusable="false"><use href="#i-glass" x="15" y="15" width="24" height="24"/></svg>`;
 }
 function glass(d) {
   return d.image
@@ -45,26 +53,8 @@ function stopCatalogResponse() {
   catalogResponse.animations=[];
 }
 function animateCatalogResponse(kind) {
-  const layers=[];
-  if(kind==='category'||kind==='reset') {
-    layers.push({node:$('.base-label'),from:.98,peak:1.006,delay:30});
-  }
-  layers.push({node:$('#result-count'),from:.92,peak:1.035,delay:55});
-  layers.push({node:$('.list-meta>span:last-child'),from:.985,peak:1.003,delay:75});
-  const continuing=catalogResponse.animations.length>0;
-  const snapshots=layers.map(layer=>({...layer,current:continuing?getComputedStyle(layer.node).scale:null}));
+  // The moving capsule and the cards provide the response; metadata stays still.
   stopCatalogResponse();
-  if(menuReducedMotion.matches||isCompactViewport())return;
-  for(const {node,from,peak,delay,current} of snapshots){
-    if(!node?.animate)continue;
-    const animation=node.animate([
-      {scale:current&&current!=='none'?current:String(from)},
-      {scale:String(peak),offset:.66},
-      {scale:'1'}
-    ],{duration:460,delay:continuing?0:delay,easing:'cubic-bezier(.16,1,.3,1)',fill:'backwards'});
-    catalogResponse.animations.push(animation);
-    animation.finished.then(()=>{catalogResponse.animations=catalogResponse.animations.filter(item=>item!==animation);},()=>{});
-  }
 }
 function animateMenuEntries(nodes, restoring = false, snapshots = []) {
   const compact = isCompactViewport();
@@ -76,18 +66,10 @@ function animateMenuEntries(nodes, restoring = false, snapshots = []) {
   visible.forEach((node, index) => {
     const snapshot = snapshots.find(item => item.node === node);
     const animation = node.animate([
-      {opacity:restoring ? snapshot.opacity : 0, transform:restoring ? snapshot.transform : `perspective(1100px) translate3d(0, ${compact ? 22 : 30}px, ${compact ? -110 : -160}px) rotateX(${compact ? 3 : 5}deg)${compact ? '' : ' scale(.97)'}`},
+      {opacity:restoring ? snapshot.opacity : 0, transform:restoring ? snapshot.transform : `perspective(1100px) translate3d(0, ${compact ? 18 : 24}px, ${compact ? -90 : -130}px) rotateX(${compact ? 2 : 4}deg)`},
       {opacity:1, transform:identity}
-    ], {duration:restoring ? 260 : compact ? 440 : 500, delay:restoring ? 0 : Math.min(index,4) * 34, easing:'cubic-bezier(.16, 1, .3, 1)', fill:'backwards'});
+    ], {duration:restoring ? 240 : compact ? 360 : 400, delay:restoring ? 0 : Math.min(index,4) * 28, easing:'cubic-bezier(.16, 1, .3, 1)', fill:'backwards'});
     menuMotion.animations.push(animation);
-    if(!compact&&!restoring){
-      const delay=Math.min(index,4)*34;
-      const visual=node.querySelector('.drink-open'),copy=node.querySelector('.card-body');
-      for(const [element,from,peak,duration] of [[visual,.94,1.012,540],[copy,.97,1.004,480]]){
-        if(!element)continue;
-        menuMotion.animations.push(element.animate([{scale:from},{scale:peak,offset:.72},{scale:1}],{duration,delay,easing:'cubic-bezier(.16,1,.3,1)',fill:'backwards'}));
-      }
-    }
   });
 }
 function renderMenu({animate = true} = {}) {
@@ -152,8 +134,15 @@ function resetFilters() {
   document.querySelectorAll('[data-category]').forEach(b => {const selected = b.dataset.category === 'all'; b.classList.toggle('selected',selected); b.setAttribute('aria-pressed',selected);});
   renderMenu();animateCatalogResponse('reset');
 }
+function stopViewTransition() {
+  viewMotion.revision++;
+  viewMotion.animation?.cancel();
+  viewMotion.animation = null;
+}
 function setView(view, focus = true) {
   if (!['menu','quiz','saved'].includes(view)) return;
+  const changed = state.view !== view;
+  stopViewTransition();
   closeBasePicker();
   selectionMotion.finish?.(false);stopSelectionTransition();
   stopCatalogResponse();
@@ -166,13 +155,23 @@ function setView(view, focus = true) {
     b.classList.toggle('active', b.dataset.view === view);
     if (b.dataset.view === view) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');
   });
-  if (view === 'quiz') setSelectionMode(state.selectionMode, false);
+  if (view === 'quiz') setSelectionMode(state.selectionMode, false, false);
   if (view === 'saved') renderSaved();
   if (view === 'menu') renderFeaturedDrink();
   window.scrollTo({top:0, behavior:'instant'});
   if (focus && view !== 'menu') $(view === 'quiz' && state.selectionMode === 'pantry' ? '#pantry-title' : `#${view}-title`).focus({preventScroll:true});
   if (focus && view === 'menu') { const heading = $('#menu-view h1'); heading.setAttribute('tabindex','-1'); heading.focus({preventScroll:true}); }
   window.syncMobileInterface?.();
+  const surface = $(`#${view}-view`);
+  if (changed && !document.hidden && !menuReducedMotion.matches && typeof surface.animate === 'function') {
+    const revision = viewMotion.revision;
+    const animation = surface.animate([
+      {opacity:0, transform:`translateY(${isCompactViewport() ? 10 : 14}px)`},
+      {opacity:1, transform:'translateY(0)'}
+    ], {duration:360, easing:'cubic-bezier(.16,1,.3,1)'});
+    viewMotion.animation = animation;
+    animation.finished.then(() => {if (revision === viewMotion.revision) viewMotion.animation = null;}, () => {});
+  }
 }
 function selectionSurface(mode) {return $(mode==='pantry'?'#pantry-surface':'.quiz-layout');}
 function stopSelectionTransition() {
@@ -195,7 +194,7 @@ function showSelectionMode(mode, focus=false, animatePanel=true) {
   if(mode==='taste')renderQuiz(false,animatePanel);else renderPantry();
   if(focus)$(title).focus({preventScroll:true});
 }
-async function setSelectionMode(mode, focus=true) {
+async function setSelectionMode(mode, focus=true, animatePanel=true) {
   if(!['taste','pantry'].includes(mode))return;
   const desktop=!isCompactViewport();
   if(mode===state.selectionMode&&(selectionMotion.busy||focus))return;
@@ -207,7 +206,7 @@ async function setSelectionMode(mode, focus=true) {
   state.selectionMode=mode;
   document.querySelectorAll('[data-selectmode]').forEach(button=>button.setAttribute('aria-pressed',button.dataset.selectmode===mode));
   window.syncMobileInterface?.();
-  if(!canFade){showSelectionMode(mode,focus);return;}
+  if(!canFade){showSelectionMode(mode,focus,animatePanel);return;}
   if(!desktop&&window.scrollY>160)window.scrollTo({top:0,behavior:'smooth'});
   const revision=selectionMotion.revision,isCurrent=()=>revision===selectionMotion.revision;
   let switched=mode===selectionMotion.displayed;
@@ -300,7 +299,10 @@ function toggleSave(id, trigger) {
   $('.saved-nav').setAttribute('aria-label', `我的酒单，${state.saved.size} 款收藏`);
   if (state.view === 'saved') {
     renderSaved();
-    const next = $('#saved-grid [data-save]'); (next || $('#saved-title')).focus({preventScroll:true});
+    // A native modal owns focus while open, even when its background list changes.
+    if (!$('#detail-dialog').open) {
+      const next = $('#saved-grid [data-save]'); (next || $('#saved-title')).focus({preventScroll:true});
+    }
   }
   window.syncMobileInterface?.();
   toast(`${saving ? '已收藏' : '已从酒单移除'}${d.cn}${!storageAvailable ? '（仅本次浏览有效）' : ''}`);
@@ -310,7 +312,7 @@ function stopDetailShake() {
   detailShakeAnimation = null;
 }
 function shakeDetail(button) {
-  const image = button.querySelector('.glass-art'); if (!image) return;
+  const image = button.querySelector('.glass-art'); if (!image || typeof image.animate !== 'function') return;
   stopDetailShake();
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const frames = reduced ? [{opacity:1}, {opacity:.78}, {opacity:1}] : [
@@ -328,12 +330,73 @@ function shakeDetail(button) {
     if (detailShakeAnimation === animation) detailShakeAnimation = null;
   }, () => {});
 }
+function stopDetailTransition() {
+  detailMotion.revision++;
+  detailMotion.animations.forEach(animation => animation.cancel());
+  detailMotion.animations = [];
+  detailMotion.closing = false;
+}
+function animateDetailBackdrop(from, to, duration) {
+  const dialog = $('#detail-dialog');
+  // Older engines may implement dialog and WAAPI without pseudo-element effects.
+  try {
+    const animation = dialog.animate([{opacity:from}, {opacity:to}], {duration, easing:'ease-out', pseudoElement:'::backdrop'});
+    if (animation.effect?.pseudoElement !== '::backdrop') {animation.cancel(); return;}
+    detailMotion.animations.push(animation);
+    animation.finished.catch(() => {});
+  } catch {}
+}
+function closeDetail(animate = true) {
+  const dialog = $('#detail-dialog');
+  if (!dialog.open || (detailMotion.closing && animate)) return;
+  const pose = getComputedStyle(dialog), snapshot = {opacity:pose.opacity, transform:pose.transform};
+  stopDetailTransition();
+  stopDetailShake();
+  if (!animate || document.hidden || menuReducedMotion.matches || typeof dialog.animate !== 'function') {dialog.close(); finishDetailClose(); return;}
+  detailMotion.closing = true;
+  const revision = detailMotion.revision;
+  const animation = dialog.animate([snapshot, {opacity:0, transform:`translateY(${isCompactViewport() ? 22 : 10}px)`}], {duration:170, easing:'cubic-bezier(.4,0,1,1)', fill:'forwards'});
+  detailMotion.animations.push(animation);
+  animateDetailBackdrop(1, 0, 170);
+  animation.finished.then(() => {
+    if (revision === detailMotion.revision && dialog.open) {dialog.close(); finishDetailClose();}
+  }, () => {});
+}
+function finishDetailClose() {
+  if ($('#detail-dialog').open || state.detail === null) return;
+  stopDetailTransition(); stopDetailShake();
+  document.body.style.overflow = detailMotion.overflow; state.detail = null;
+  restoreDetailFocus();
+}
+function restoreDetailFocus() {
+  const visible = node => node?.isConnected && !node.disabled && !node.closest('[hidden],[inert]') && node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden';
+  const surface = $(`#${state.view}-view`);
+  const alternatives = [detailTrigger, ...surface.querySelectorAll('[data-detail],[data-save]'), $(state.view === 'menu' ? '#menu-view h1' : state.view === 'quiz' && state.selectionMode === 'pantry' ? '#pantry-title' : `#${state.view}-title`)];
+  const target = alternatives.find(visible);
+  if (target) {if (target.matches('h1,h2')) target.setAttribute('tabindex','-1'); target.focus({preventScroll:true});}
+  detailTrigger = null;
+}
 function openDetail(id, trigger) {
   const d = DRINKS.find(x => x.id === id); if (!d) return;
+  const dialog = $('#detail-dialog'), wasOpen = dialog.open, previousDetail = state.detail;
+  const pose = wasOpen ? getComputedStyle(dialog) : null;
+  const snapshot = pose ? {opacity:pose.opacity, transform:pose.transform} : {opacity:0, transform:`translateY(${isCompactViewport() ? 26 : 16}px)`};
+  stopDetailTransition();
   stopDetailShake();
-  state.detail = id; detailTrigger = trigger || document.activeElement;
-  $('#detail-content').innerHTML = `<div class="detail-layout" style="${style(d)}"><div class="detail-art"><div class="detail-stage"><button type="button" class="detail-shake" data-shake="${d.id}" aria-label="摇一摇${d.cn}酒杯" aria-describedby="detail-shake-hint">${glass(d)}</button><p class="detail-hint" id="detail-shake-hint">轻点酒杯，摇一摇</p></div></div><div class="detail-copy"><h2 id="detail-title">${d.name}</h2><h3>${d.cn}</h3><div class="card-tags"><span>${d.tag}</span><span>${d.baseName}</span></div><p>${d.description}</p><div class="flavor-journey"><h4>风味路径</h4><ol>${d.layers.map((layer,i) => `<li><small>${['前段','中段','尾韵'][i]}</small><span>${layer}</span></li>`).join('')}</ol><p>口感：${d.texture}</p></div><div class="recipe"><h4>${d.category === 'classic' ? '经典配方 · 单杯' : d.category === 'signature' ? '原创概念配方 · 单杯' : '无酒精概念配方 · 单杯'}</h4><dl>${d.ingredients.map(([name, amount]) => `<div><dt>${name}</dt><dd>${amount}</dd></div>`).join('')}</dl></div><p>${d.method}</p>${d.prep ? `<p class="prep-note">备料：${d.prep}</p>` : ''}${d.allergen ? `<p class="ingredient-note">${d.allergen}</p>` : ''}${saveButton(d, 'button secondary')}<br>${d.source ? `<a class="recipe-source" href="${d.source}" target="_blank" rel="noopener noreferrer">查看 IBA 原始配方 ${icon('arrow')}</a>` : `<p class="concept-note">为本酒单设计的原创概念配方，尚未实调；甜酸与口感需按实际原料试调。图片为 AI 视觉示意。</p>`}</div></div>`;
-  $('#detail-dialog').showModal(); document.body.style.overflow = 'hidden';
+  state.detail = id;
+  if (!wasOpen) {detailTrigger = trigger || document.activeElement; if (!previousDetail) detailMotion.overflow = document.body.style.overflow;}
+  $('#detail-content').innerHTML = `<div class="detail-layout" style="${style(d)}"><div class="detail-art"><div class="detail-stage"><button type="button" class="detail-shake" data-shake="${d.id}" aria-label="摇一摇${d.cn}酒杯" aria-describedby="detail-shake-hint">${glass(d)}</button><p class="detail-hint" id="detail-shake-hint">轻点酒杯，摇一摇</p></div></div><div class="detail-copy"><h2 id="detail-title">${d.name}</h2><h3>${d.cn}</h3><div class="card-tags"><span>${d.tag}</span><span>${d.baseName}</span></div><p>${d.description}</p><div class="flavor-journey"><h4>风味路径</h4><ol>${d.layers.map((layer,i) => `<li><small>${['前段','中段','尾韵'][i]}</small><span>${layer}</span></li>`).join('')}</ol><p>口感：${d.texture}</p></div><div class="recipe"><h4>${d.category === 'classic' ? '经典配方 · 单杯' : d.category === 'signature' ? '原创概念配方 · 单杯' : '无酒精概念配方 · 单杯'}</h4><dl>${d.ingredients.map(([name, amount]) => `<div><dt>${name}</dt><dd>${amount}</dd></div>`).join('')}</dl></div><p>${d.method}</p>${(d.prepNote || d.prep) ? `<p class="prep-note">备料：${d.prepNote || d.prep}</p>` : ''}${(d.ingredientNote || d.allergen) ? `<p class="ingredient-note">${d.ingredientNote || d.allergen}</p>` : ''}${saveButton(d, 'button secondary')}<br>${d.source ? `<a class="recipe-source" href="${d.source}" target="_blank" rel="noopener noreferrer">查看 IBA 原始配方 ${icon('arrow')}</a>` : `<p class="concept-note">${d.conceptNote || '为本酒单设计的原创概念配方，尚未实调；甜酸与口感需按实际原料试调。图片为 AI 视觉示意。'}</p>`}</div></div>`;
+  dialog.style.animation = 'none';
+  if (!wasOpen) dialog.showModal();
+  dialog.scrollTop = 0;
+  document.body.style.overflow = 'hidden';
+  $('#close-detail').focus({preventScroll:true});
+  if (!document.hidden && !menuReducedMotion.matches && typeof dialog.animate === 'function') {
+    const animation = dialog.animate([snapshot, {opacity:1, transform:'none'}], {duration:320, easing:'cubic-bezier(.16,1,.3,1)'});
+    detailMotion.animations.push(animation);
+    animation.finished.catch(() => {});
+    animateDetailBackdrop(wasOpen ? 1 : 0, 1, 260);
+  }
 }
 const questions = [
   {key:'flavor', title:'第一口，喜欢什么味道？', hint:'从直觉出发，选最吸引你的一个。', options:[['sour','清爽酸甜','青柠的酸，明亮又利落'],['bitter','苦甜草本','苦橙与草本，层次慢慢展开'],['dry','冷冽干爽','清澈、干净，不以甜味为主'],['rich','圆润醇厚','咖啡、木香与烘焙回味'],['fresh','清新气泡','薄荷清香，气泡轻快'],['fruity','明亮果香','莓果、菠萝与椰香'],['tea','花香茶韵','茉莉、乌龙与水果的层次'],['all','还没想好','让下一步的偏好决定']]},
@@ -348,13 +411,12 @@ function focusQuestion() {
 }
 function springPanel() {
   const panel = $('#quiz-panel');
-  panel.getAnimations().forEach(animation => animation.cancel());
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  panel.getAnimations?.().forEach(animation => animation.cancel());
+  if (menuReducedMotion.matches || typeof panel.animate !== 'function') return;
   panel.animate([
-    {opacity:.6, transform:'translateY(10px) scale(.975)'},
-    {opacity:1, transform:'translateY(-2px) scale(1.006)', offset:.75},
-    {opacity:1, transform:'translateY(0) scale(1)'}
-  ], {duration:420, easing:'cubic-bezier(.16,1,.3,1)'});
+    {opacity:0, transform:'translateY(10px)'},
+    {opacity:1, transform:'translateY(0)'}
+  ], {duration:360, easing:'cubic-bezier(.16,1,.3,1)'});
 }
 function renderQuiz(focus = false, animate = true) {
   const result = state.step === questions.length;
@@ -424,7 +486,7 @@ document.addEventListener('click', e => {
   if (b.id === 'quiz-prev') {state.step = Math.max(0,state.step - 1); renderQuiz(true);}
   if (b.id === 'quiz-edit') {state.step = 2; renderQuiz(true);}
   if (b.id === 'quiz-restart') {state.step = 0; state.answers = {}; renderQuiz(true);}
-  if (b.id === 'close-detail') $('#detail-dialog').close();
+  if (b.id === 'close-detail') closeDetail();
 });
 $('#search').addEventListener('input', e => {state.filters.query = e.target.value; renderMenu();});
 $('#pantry-search').addEventListener('input', filterPantryOptions);
@@ -500,12 +562,15 @@ $('#quiz-panel').addEventListener('keydown', e => {
 });
 $('#detail-dialog').addEventListener('click', e => {
   if (e.target !== $('#detail-dialog')) return;
-  const r = e.target.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.target.close();
+  const r = e.target.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeDetail();
 });
-$('#detail-dialog').addEventListener('close', () => {stopDetailShake(); document.body.style.overflow = ''; state.detail = null; if (detailTrigger?.isConnected) detailTrigger.focus({preventScroll:true});});
+$('#detail-dialog').addEventListener('cancel', event => {event.preventDefault(); closeDetail();});
+$('#detail-dialog').addEventListener('close', finishDetailClose);
 function stopFeaturedDraw() {
+  clearTimeout(featuredReturnCache.timer);featuredReturnCache.timer=0;
   featuredDraw.shake?.cancel(); featuredDraw.shake=null;
   $('#hero-feature')?.classList.remove('is-recomposing','is-returning');
+  document.querySelectorAll('.feature-copy-layer').forEach(layer=>layer.remove());
   $('.feature-info')?.removeAttribute('aria-hidden');
   featuredDraw.revision++;
   featuredDraw.animations.forEach(animation => animation.cancel());
@@ -526,11 +591,43 @@ function stopFeaturedDraw() {
   });
   featuredDraw.busy = false;
   featuredDraw.finish = null;
-  featuredDraw.preview = null;
 }
-function updateFeaturedDrink(hero, image) {
+function mountFeaturedGlass(hero, preparedImage) {
+  const slot=$('.feature-glass');
+  const existing=slot.querySelector('.drink-photo');
+  if(existing&&existing.getAttribute('src')===hero.image)return existing;
+  if(!hero.image){slot.innerHTML=glassIllustration(hero);return null;}
+  const image=preparedImage||requestFeaturedImage(hero);
+  image.className=`glass-art drink-photo photo-${hero.id}`;
+  image.alt='';image.width=image.height=1280;image.decoding='async';image.draggable=false;
+  if(image.naturalWidth){slot.replaceChildren(image);return image;}
+  slot.innerHTML=glassIllustration(hero);
+  if(!image.complete){
+    const illustration=slot.firstElementChild;
+    image.hidden=true;
+    image.addEventListener('load',()=>{
+      if(image.parentElement!==slot)return;
+      illustration.remove();image.hidden=false;
+      queueFeaturedReturnPreparation();
+    },{once:true});
+    image.addEventListener('error',()=>image.remove(),{once:true});
+    slot.append(image);
+  }
+  return image;
+}
+function featuredImageRect(relativeTo, naturalImage) {
+  const image=$('.feature-glass .drink-photo'),rect=image.getBoundingClientRect(),css=getComputedStyle(image);
+  const n=value=>parseFloat(value)||0;
+  const left=n(css.borderLeftWidth)+n(css.paddingLeft),top=n(css.borderTopWidth)+n(css.paddingTop);
+  const width=rect.width-left-n(css.borderRightWidth)-n(css.paddingRight);
+  const height=rect.height-top-n(css.borderBottomWidth)-n(css.paddingBottom);
+  const source=naturalImage||image,ratio=(source.naturalWidth||1)/(source.naturalHeight||1);
+  const fittedWidth=Math.min(width,height*ratio),fittedHeight=fittedWidth/ratio;
+  return {x:rect.left-relativeTo.left+left+(width-fittedWidth)/2,y:rect.top-relativeTo.top+top+(height-fittedHeight)/2,width:fittedWidth,height:fittedHeight};
+}
+function updateFeaturedDrink(hero, restoreInitiatorFocus = false, image) {
   const feature = $('#hero-feature');
-  const restoreFocus = $('.draw-deck').contains(document.activeElement);
+  const restoreFocus = restoreInitiatorFocus || $('.draw-deck').contains(document.activeElement);
   featuredDraw.hero = hero;
   featuredId = hero.id;
   try {sessionStorage.setItem('between-five-featured-v1',featuredId);} catch {}
@@ -539,27 +636,7 @@ function updateFeaturedDrink(hero, image) {
   feature.dataset.featured = hero.id;
   feature.dataset.drawState = 'revealed';
   feature.dataset.drawPhase = 'revealed';
-  const glassSlot = $('.feature-glass');
-  const photoReady = Boolean(image?.complete && image.naturalWidth);
-  glassSlot.innerHTML = photoReady ? '' : glassIllustration(hero);
-  if (image && (photoReady || !image.complete)) {
-    image.className = `glass-art drink-photo photo-${hero.id}`;
-    image.alt = '';
-    image.width = image.height = 1280;
-    image.decoding = 'async';
-    image.draggable = false;
-    image.hidden = !photoReady;
-    if (!photoReady) {
-      const illustration = glassSlot.firstElementChild;
-      image.addEventListener('load', () => {
-        if (image.parentElement !== glassSlot) return;
-        illustration.remove();
-        image.hidden = false;
-      }, {once:true});
-      image.addEventListener('error', () => image.remove(), {once:true});
-    }
-    glassSlot.append(image);
-  }
+  mountFeaturedGlass(hero,image);
   $('.hero-caption').textContent = categories[hero.category];
   $('.feature-info p').textContent = '今日为你抽到';
   $('.feature-info h2').textContent = hero.name;
@@ -571,7 +648,9 @@ function updateFeaturedDrink(hero, image) {
   detail.disabled = false;
   detail.dataset.detail = hero.id;
   detail.setAttribute('aria-label',`查看${hero.cn}配方`);
+  window.syncMobileInterface?.();
   if (restoreFocus) $('[data-draw-feature]').focus({preventScroll:true});
+  queueFeaturedReturnPreparation();
 }
 function dealFeaturedChoices(focus = false, keepMotion = false) {
   if (!keepMotion) stopFeaturedDraw();
@@ -609,152 +688,196 @@ function renderFeaturedDrink() {
   $('#hero-feature').innerHTML = `<div class="hero-art feature-stage"><button class="feature-draw feature-shake" data-shake-feature type="button" aria-label="摇一摇推荐酒杯" title="点酒杯，摇一摇"><span class="feature-glass"></span></button><div class="draw-hand-scroll" aria-label="可左右滑动的推荐手牌"><div class="draw-deck" role="group" aria-label="七张叠放的推荐牌，任选一张">${Array.from({length:7},(_,index)=>`<button class="draw-card" type="button" data-pick-feature="${index}" style="--slot:${index};--fan:${(index-3)*2.2};--bend:${Math.abs(index-3)*2}" aria-label="抽第${index+1}张推荐牌">${icon('glass')}<span>NIGHT SIP</span><span class="draw-card-number">${String(index+1).padStart(2,'0')}</span></button>`).join('')}</div></div><canvas class="draw-particles" aria-hidden="true"></canvas><div class="feature-hint"><button class="mobile-reveal" data-confirm-feature type="button" hidden><span>揭晓这张</span>${icon('arrow')}</button><span class="draw-hint-message">${icon('shuffle')}<span data-hint-copy>${window.matchMedia('(hover:none)').matches?'轻点挑牌，再点揭晓':'悬停挑选，点击揭晓'}</span></span><button class="draw-hint" type="button" data-draw-feature aria-label="再铺开七张推荐牌">${icon('shuffle')}<span data-hint-copy>再抽一杯</span></button></div></div><div class="feature-info"><div class="feature-meta"><p></p><span class="hero-caption"></span></div><div class="feature-title"><h2></h2></div><small></small></div><button class="feature-detail" type="button">查看配方 ${icon('arrow')}</button><canvas class="return-particles" aria-hidden="true"></canvas><canvas class="title-particles" aria-hidden="true"></canvas>`;
   dealFeaturedChoices();
 }
-function prepareFeaturedImage(hero, preloaded) {
-  if (!hero.image) return null;
-  const image = preloaded && (!preloaded.complete || preloaded.naturalWidth) ? preloaded : new Image();
-  image.loading = 'eager';
-  image.fetchPriority = 'high';
-  if (image !== preloaded) image.src = hero.image;
+function requestFeaturedImage(hero) {
+  if(!hero.image)return null;
+  const image = new Image();
+  image.loading='eager';image.fetchPriority='high';
+  image.src = hero.image;
   return image;
 }
-function waitForFeaturedPhoto(image) {
-  if (!image || image.complete) return Promise.resolve(Boolean(image?.naturalWidth));
+function prepareFeaturedImage(hero, image = requestFeaturedImage(hero)) {
+  if(!image)return Promise.resolve(null);
+  if (image.complete) return Promise.resolve(image.naturalWidth > 0 ? image : null);
   return new Promise(resolve => {
-    const done = () => {
+    const timer=setTimeout(done,1400);
+    function done() {
       clearTimeout(timer);
-      image.removeEventListener('load', done);
-      image.removeEventListener('error', done);
-      resolve(Boolean(image.complete && image.naturalWidth));
-    };
-    // Bound the wait for photo particles. The same image can keep loading after reveal.
-    const timer = setTimeout(done, 750);
-    image.addEventListener('load', done);
-    image.addEventListener('error', done);
+      image.removeEventListener('load',done);image.removeEventListener('error',done);
+      resolve(image.naturalWidth?image:null);
+    }
+    image.addEventListener('load',done);image.addEventListener('error',done);
   });
 }
-function captureFeaturedCopy(hero, mode, compact) {
-  const feature=$('#hero-feature'),rect=feature.getBoundingClientRect();
-  const clone=feature.cloneNode(true);
-  clone.classList.remove('is-recomposing','is-returning');clone.setAttribute('aria-hidden','true');
-  clone.style.cssText+=`;position:fixed;left:-10000px;top:0;width:${rect.width}px;height:${rect.height}px;margin:0;opacity:0;pointer-events:none;`;
-  clone.querySelectorAll('canvas,.draw-deck,.feature-glass').forEach(node=>node.remove());
-  if(hero){
-    clone.dataset.drawState='revealed';
-    clone.querySelector('.feature-meta p').textContent='今日为你抽到';
-    clone.querySelector('.hero-caption').textContent={classic:'经典精选',signature:'原创特调',zero:'无酒精'}[hero.category];
-    clone.querySelector('h2').textContent=hero.name;
-    clone.querySelector('.feature-info small').textContent=`${hero.cn} · ${hero.tag}`;
+function featuredSmooth(value) {
+  const t=Math.max(0,Math.min(1,value));
+  // Zero velocity and acceleration at both ends, including stagger boundaries.
+  return t*t*t*(t*(t*6-15)+10);
+}
+function createFeaturedParticlePath(start,target,{bend=12,lift=0,delay=0,end=.94}={}) {
+  const dx=target.x-start.x,dy=target.y-start.y,length=Math.hypot(dx,dy)||1;
+  const nx=-dy/length,ny=dx/length;
+  return {start,target,delay,end,
+    first:{x:start.x+dx*.28+nx*bend,y:start.y+dy*.28+ny*bend-lift},
+    second:{x:target.x-dx*.22+nx*bend*.45,y:target.y-dy*.22+ny*bend*.45-lift*.3}};
+}
+function featuredParticleAt(path,progress) {
+  const t=featuredSmooth((progress-path.delay)/(path.end-path.delay)),u=1-t;
+  return {x:u*u*u*path.start.x+3*u*u*t*path.first.x+3*u*t*t*path.second.x+t*t*t*path.target.x,
+    y:u*u*u*path.start.y+3*u*u*t*path.first.y+3*u*t*t*path.second.y+t*t*t*path.target.y,travel:t};
+}
+function featuredRevealPhotoOpacity(progress) {
+  // The particles first build the complete cup; photography only resolves its
+  // fine detail after the last particle has landed. Never preview its silhouette.
+  return featuredSmooth((progress*FEATURED_GATHER_MS-FEATURED_PHOTO_START_MS)/FEATURED_RESOLVE_MS);
+}
+function createFeaturedRevealPath(cardBounds,target,bounds,random=Math.random) {
+  // Start positions are independent of destination pixels. Mapping corresponding
+  // card/cup coordinates would show a miniature cup before any gathering occurs.
+  const start={x:cardBounds.x+cardBounds.width*(.06+random()*.88),
+    y:cardBounds.y+cardBounds.height*(.06+random()*.88)};
+  const angle=random()*Math.PI*2,spread=.6+random()*.4;
+  const rx=bounds.width*.46*spread,ry=bounds.height*.47*spread;
+  return {start,target,delay:random()*.065,end:.78+random()*.08,
+    first:{x:bounds.width*.5+Math.cos(angle)*rx,y:bounds.height*.48+Math.sin(angle)*ry},
+    second:{x:target.x+Math.cos(angle+.65)*rx*.62,y:target.y+Math.sin(angle+.65)*ry*.62}};
+}
+function createFeaturedCopyLayers(hero, mode) {
+  const feature=$('#hero-feature');
+  const createCopy=(incoming)=>{
+    const copy=document.createElement('div');copy.className='feature-copy-layer';copy.inert=true;copy.setAttribute('aria-hidden','true');
+    copy.dataset.copyState=incoming?(mode==='choosing'?'choosing':'revealed'):(hero?'choosing':'revealed');
+    const stage=document.createElement('div');stage.className='hero-art feature-stage';
+    stage.append($('.feature-hint').cloneNode(true));
+    copy.append(stage,$('.feature-info').cloneNode(true),$('.feature-detail').cloneNode(true));
+    copy.querySelectorAll('[id]').forEach(node=>node.removeAttribute('id'));
+    copy.querySelectorAll('[data-confirm-feature]').forEach(node=>node.remove());
+    copy.querySelectorAll('button').forEach(button=>{button.disabled=false;});
+    if(incoming&&hero){
+      copy.querySelector('.feature-meta p').textContent='今日为你抽到';
+      copy.querySelector('.hero-caption').textContent={classic:'经典精选',signature:'原创特调',zero:'无酒精'}[hero.category];
+      copy.querySelector('h2').textContent=hero.name;
+      copy.querySelector('.feature-info small').textContent=`${hero.cn} · ${hero.tag}`;
+    }else if(incoming&&mode==='choosing'){
+      copy.querySelector('.feature-meta p').textContent='今晚的灵感';
+      copy.querySelector('h2').textContent='下一杯，会是谁？';
+      copy.querySelector('.feature-info small').textContent='七张牌，七种新的风味。';
+    }
+    copy.style.opacity='0';feature.append(copy);return copy;
+  };
+  const from=createCopy(false),to=createCopy(true);
+  return {from,to,duration:hero?FEATURED_REVEAL_MS:1600,started:false};
+}
+function featuredGlyphMask(character,font,ratio) {
+  const key=[character,font,ratio].join('|');
+  if(featuredGlyphCache.has(key))return featuredGlyphCache.get(key);
+  const canvas=document.createElement('canvas'),context=canvas.getContext('2d',{willReadFrequently:true});
+  if(!context)return null;
+  context.font=font;
+  const metrics=context.measureText(character),size=parseFloat(font.match(/([\d.]+)px/)?.[1])||16;
+  const ascent=metrics.fontBoundingBoxAscent??size*.9,descent=metrics.fontBoundingBoxDescent??size*.25;
+  const left=2+Math.max(0,metrics.actualBoundingBoxLeft),baseline=2+ascent;
+  const width=Math.ceil(left+Math.max(metrics.width,metrics.actualBoundingBoxRight)+2),height=Math.ceil(ascent+descent+4);
+  canvas.width=Math.ceil(width*ratio);canvas.height=Math.ceil(height*ratio);
+  context.scale(ratio,ratio);context.font=font;context.textBaseline='alphabetic';context.fillStyle='#fff';
+  context.fillText(character,left,baseline);
+  const data=context.getImageData(0,0,canvas.width,canvas.height).data,points=[];
+  for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++){
+    const alpha=data[(y*canvas.width+x)*4+3];
+    if(alpha>80)points.push((x+.5)/ratio-left,(y+.5)/ratio-baseline,alpha/255);
   }
-  if(mode==='choosing'){
-    clone.classList.remove('has-armed-card');
-    const confirm=clone.querySelector('[data-confirm-feature]');if(confirm)confirm.hidden=true;
-    clone.dataset.drawState='choosing';
-    clone.querySelector('.feature-meta p').textContent='今晚的灵感';
-    clone.querySelector('h2').textContent='下一杯，会是谁？';
-    clone.querySelector('.feature-info small').textContent='七张牌，七种新的风味。';
-  }
-  clone.querySelectorAll('.feature-title,h2').forEach(node=>{node.style.minHeight='';node.style.opacity='';});
-  feature.parentElement.append(clone);
-  try{
-    const bounds=clone.getBoundingClientRect(),bitmap=document.createElement('canvas');
-    bitmap.width=Math.ceil(rect.width);bitmap.height=Math.ceil(rect.height);
-    const context=bitmap.getContext('2d',{willReadFrequently:true});
-    if(!context)return null;
-    const leaves=clone.querySelectorAll('.feature-meta p,.hero-caption,.feature-title h2,.feature-info small,[data-hint-copy],.mobile-reveal > span,.feature-detail');
-    let firstRow = bitmap.height, lastRow = 0;
-    for(const leaf of leaves){
-      const computed=getComputedStyle(leaf);
-      if(!leaf.getClientRects().length||computed.visibility==='hidden'||computed.display==='none')continue;
-      const textNode=leaf.firstChild;
-      if(!textNode||textNode.nodeType!==3)continue;
-      context.font=`${computed.fontWeight} ${computed.fontSize} ${computed.fontFamily}`;
-      context.fillStyle=computed.color;context.textBaseline='alphabetic';
-      const range=document.createRange(),text=textNode.textContent;
-      if (compact) {
-        range.selectNodeContents(textNode);
-        const lines = range.getClientRects();
-        for (const line of lines) {
-          firstRow = Math.min(firstRow, Math.floor(line.top-bounds.top)-3);
-          lastRow = Math.max(lastRow, Math.ceil(line.bottom-bounds.top)+3);
-        }
-        const spacing = computed.letterSpacing === 'normal' ? '0px' : computed.letterSpacing;
-        const canSpace = 'letterSpacing' in context;
-        // Use glyph positions when line wrapping or unsupported spacing affects the layout.
-        if (lines.length === 1 && (canSpace || parseFloat(spacing) === 0)) {
-          const line = lines[0];
-          if (canSpace) context.letterSpacing = spacing;
-          const descent = context.measureText(text).fontBoundingBoxDescent || 3;
-          context.fillText(text, line.left-bounds.left, line.bottom-bounds.top-descent);
-          if (canSpace) context.letterSpacing = '0px';
-          continue;
+  const mask={points:new Float32Array(points),ascent,descent};
+  // Bound memory across repeated drinks and resizes; masks contain only glyphs,
+  // never a full hero bitmap or a low-resolution photograph of the text.
+  if(featuredGlyphCache.size>=256)featuredGlyphCache.delete(featuredGlyphCache.keys().next().value);
+  featuredGlyphCache.set(key,mask);return mask;
+}
+function sampleFeaturedCopyText(copy,bounds) {
+  const ratio=Math.min(devicePixelRatio||1,2),points=[],roles=new Map();
+  const selectors=['.feature-meta p','.hero-caption','.feature-title h2','.feature-info small','.draw-hint span','.draw-hint-message [data-hint-copy]','.feature-detail'];
+  for(const selector of selectors){
+    const leaf=copy.querySelector(selector);if(!leaf)continue;
+    const css=getComputedStyle(leaf),box=leaf.getBoundingClientRect();
+    if(!box.width||!box.height||css.visibility==='hidden')continue;
+    const font=`${css.fontStyle} ${css.fontWeight} ${css.fontSize} ${css.fontFamily}`;
+    const rolePoints=[];
+    for(const node of leaf.childNodes){
+      if(node.nodeType!==Node.TEXT_NODE)continue;
+      let offset=0;
+      for(const character of node.textContent){
+        const length=character.length;
+        if(!character.trim()){offset+=length;continue;}
+        const range=document.createRange();range.setStart(node,offset);range.setEnd(node,offset+length);offset+=length;
+        const rect=range.getBoundingClientRect(),mask=featuredGlyphMask(character,font,ratio);if(!mask)continue;
+        const baseline=rect.top-bounds.top+(rect.height-mask.ascent-mask.descent)/2+mask.ascent;
+        for(let i=0;i<mask.points.length;i+=3){
+          const point={x:rect.left-bounds.left+mask.points[i],y:baseline+mask.points[i+1],alpha:mask.points[i+2],color:css.color,role:selector};
+          rolePoints.push(point);points.push(point);
         }
       }
-      for(let i=0;i<text.length;i++){
-        range.setStart(textNode,i);range.setEnd(textNode,i+1);
-        const glyph=range.getBoundingClientRect(),descent=context.measureText(text[i]).fontBoundingBoxDescent||3;
-        context.fillText(text[i],glyph.left-bounds.left,glyph.bottom-bounds.top-descent);
-      }
     }
-    const top = compact ? Math.max(0,firstRow) : 0;
-    const height = compact ? Math.min(bitmap.height,lastRow)-top : bitmap.height;
-    if (height <= 0) return null;
-    const pixels=context.getImageData(0,top,bitmap.width,height).data,points=[];
-    for(let y=0;y<height;y+=2)for(let x=0;x<bitmap.width;x+=2){
-      const offset=(y*bitmap.width+x)*4;
-      if(pixels[offset+3]>70)points.push({x,y:y+top,color:[pixels[offset],pixels[offset+1],pixels[offset+2]],alpha:pixels[offset+3]/255});
-    }
-    return {bitmap,points};
-  }finally{clone.remove();}
+    if(rolePoints.length)roles.set(selector,rolePoints);
+  }
+  return {points,roles};
 }
-function featuredTitleColor(start, target, progress) {
-  const mix = (a,b) => Math.round(a+(b-a)*progress);
-  return `rgb(${mix(start[0],target[0])},${mix(start[1],target[1])},${mix(start[2],target[2])})`;
+function buildFeaturedTextParticleModel(layers) {
+  const bounds=$('#hero-feature').getBoundingClientRect();
+  const from=sampleFeaturedCopyText(layers.from,bounds),to=sampleFeaturedCopyText(layers.to,bounds);
+  if(!from.points.length||!to.points.length)return null;
+  const count=Math.min(Math.max(from.points.length,to.points.length),isCompactViewport()?1000:1800),groups=new Map();
+  let minY=bounds.height,maxY=0;
+  for(let i=0;i<count;i++){
+    const target=to.points[Math.floor((i+Math.random())*to.points.length/count)];
+    const candidates=from.roles.get(target.role)||from.points;
+    const start=candidates[Math.floor(Math.random()*candidates.length)],seed=Math.random();
+    const path=createFeaturedParticlePath(start,target,{bend:(seed-.5)*48,lift:12+seed*12,delay:seed*.065,end:.74+seed*.08});
+    const coefficients=axis=>[start[axis],3*(path.first[axis]-start[axis]),3*(start[axis]-2*path.first[axis]+path.second[axis]),target[axis]-start[axis]+3*(path.first[axis]-path.second[axis])];
+    const particle={x:coefficients('x'),y:coefficients('y'),delay:path.delay,end:path.end,alpha:target.alpha,radius:.52+seed*.25};
+    if(!groups.has(target.color))groups.set(target.color,{color:target.color,particles:[]});
+    groups.get(target.color).particles.push(particle);
+    minY=Math.min(minY,start.y,target.y,path.first.y,path.second.y);maxY=Math.max(maxY,start.y,target.y,path.first.y,path.second.y);
+  }
+  return {groups:[...groups.values()],count,w:bounds.width,h:bounds.height,clearTop:Math.max(0,minY-4),clearBottom:Math.min(bounds.height,maxY+4)};
 }
-function createFeaturedTitleParticles(hero, mode) {
-  const compact = isCompactViewport();
-  const from=captureFeaturedCopy(null,null,compact),to=captureFeaturedCopy(hero,mode,compact);
-  if(!from?.points.length||!to?.points.length)return null;
-  const canvas=$('.title-particles'),rect=$('#hero-feature').getBoundingClientRect();
-  const ratio=Math.min(window.devicePixelRatio||1,compact?1.25:2),w=rect.width,h=rect.height;
-  canvas.width=Math.ceil(w*ratio);canvas.height=Math.ceil(h*ratio);
-  const context=canvas.getContext('2d');if(!context)return null;
-  context.scale(ratio,ratio);
-  const count=Math.min(Math.max(from.points.length,to.points.length),compact?400:1100);
-  const points=Array.from({length:count},(_,i)=>{
-    const start=from.points[Math.floor(i*from.points.length/count)];
-    const target=to.points[Math.floor(i*to.points.length/count)];
-    // Reuse the color steps on mobile instead of parsing a new color each frame.
-    const colors=compact ? Array.from({length:9},(_,step)=>featuredTitleColor(start.color,target.color,step/8)) : null;
-    return {start,target,colors,dx:(Math.random()-.5)*28,dy:(Math.random()-.5)*20};
-  });
-  $('#hero-feature').classList.add('is-recomposing');
+function prepareFeaturedReturnText() {
+  const layers=createFeaturedCopyLayers(null,'choosing');
+  try{return buildFeaturedTextParticleModel(layers);}finally{layers.from.remove();layers.to.remove();}
+}
+function createFeaturedCopyTransition(hero, mode, prepared) {
+  const feature=$('#hero-feature'),layers=createFeaturedCopyLayers(hero,mode);
+  const model=prepared||buildFeaturedTextParticleModel(layers),canvas=$('.title-particles');
+  const context=canvas.getContext('2d'),ratio=Math.min(devicePixelRatio||1,isCompactViewport()?1.5:2);
+  if(model&&context){canvas.width=Math.ceil(model.w*ratio);canvas.height=Math.ceil(model.h*ratio);context.scale(ratio,ratio);}
+  layers.from.style.opacity='1';
+  feature.classList.add('is-recomposing');
   $('.feature-info').setAttribute('aria-hidden','true');
-  return {context,w,h,from,to,points};
+  return {...layers,model,context};
 }
-function drawFeaturedTitleParticles(layer,progress) {
+function startFeaturedCopyTransition(layer,time) {
   if(!layer)return;
-  const smooth=v=>{const t=Math.max(0,Math.min(v,1));return t*t*(3-2*t);};
-  const {context,w,h,from,to,points}=layer;
-  const gather=smooth((progress-.28)/.6),out=1-smooth(progress/.25),photo=smooth((progress-.76)/.24);
-  context.clearRect(0,0,w,h);
-  if (out > 0) {
-    context.globalAlpha=out;
-    context.drawImage(from.bitmap,0,0,w,h);
-  }
-  const opacity=(1-photo)*smooth(progress/.12);
-  if (opacity > 0) {
-    const arc=Math.sin(gather*Math.PI),colorStep=Math.round(gather*8);
-    for(const p of points){
-      context.fillStyle=p.colors ? p.colors[colorStep] : featuredTitleColor(p.start.color,p.target.color,gather);
-      context.globalAlpha=opacity*(p.start.alpha+(p.target.alpha-p.start.alpha)*gather);
-      const x=p.start.x+(p.target.x-p.start.x)*gather+p.dx*arc;
-      const y=p.start.y+(p.target.y-p.start.y)*gather+p.dy*arc;
-      context.beginPath();context.arc(x,y,.9,0,Math.PI*2);context.fill();
+  time??=document.timeline.currentTime;
+  if(!layer.started){
+    layer.started=true;layer.startTime=time;
+    // The native target stays absent until every text particle has landed.
+    // It only supplies the final crisp edge, never substitutes for the motion.
+    for(const [node,incoming] of [[layer.from,false],[layer.to,true]]){
+      const frames=incoming?[{opacity:0,offset:0},{opacity:0,offset:.86},...Array.from({length:16},(_,i)=>({opacity:featuredSmooth((i+1)/16),offset:.86+.14*(i+1)/16}))]:
+        [{opacity:1,offset:0},...Array.from({length:16},(_,i)=>({opacity:1-featuredSmooth((i+1)/16),offset:.14*(i+1)/16})),{opacity:0,offset:1}];
+      const animation=node.animate(frames,{duration:layer.duration,fill:'both',easing:'linear'});
+      animation.startTime=time;animation.finished.catch(()=>{});featuredDraw.animations.push(animation);
     }
   }
-  if (photo > 0) {
-    context.globalAlpha=photo;
-    context.drawImage(to.bitmap,0,0,w,h);
+  const {model,context}=layer;if(!model||!context)return;
+  const progress=Math.min((time-layer.startTime)/layer.duration,1);
+  const opacity=featuredSmooth(progress/.10)*(1-featuredSmooth((progress-.86)/.14));
+  context.clearRect(0,model.clearTop,model.w,model.clearBottom-model.clearTop);
+  for(const group of model.groups){
+    context.fillStyle=group.color;
+    for(const p of group.particles){
+      const t=featuredSmooth((progress-p.delay)/(p.end-p.delay)),x=p.x,y=p.y;
+      const px=((x[3]*t+x[2])*t+x[1])*t+x[0],py=((y[3]*t+y[2])*t+y[1])*t+y[0];
+      context.globalAlpha=opacity*p.alpha;
+      context.fillRect(px-p.radius,py-p.radius,p.radius*2,p.radius*2);
+    }
   }
   context.globalAlpha=1;
 }
@@ -774,24 +897,13 @@ function shakeFeaturedDrink() {
   ];
   const animation=image.animate(frames,{duration:reduced?180:780,easing:'ease-in-out'});
   featuredDraw.shake=animation;
-  animation.finished.catch(()=>{}).then(()=>{if(featuredDraw.shake===animation)featuredDraw.shake=null;});
+  animation.finished.catch(()=>{}).then(()=>{if(featuredDraw.shake===animation){featuredDraw.shake=null;queueFeaturedReturnPreparation();}});
 }
 function selectFeaturedCard(button,event) {
   if(featuredDraw.busy)return;
   if((isCompactViewport()||window.matchMedia('(hover:none)').matches)&&event.detail!==0&&!button.classList.contains('is-armed')){
     document.querySelectorAll('[data-pick-feature]').forEach(card=>{card.classList.remove('is-armed');card.setAttribute('aria-pressed','false');});
-    button.classList.add('is-armed');
-    button.setAttribute('aria-pressed','true');
-    button.focus({preventScroll:true});
-    window.syncMobileInterface?.();
-    const choice = featuredDraw.choices[Number(button.dataset.pickFeature)];
-    if (isCompactViewport() && choice?.image) {
-      const image = new Image();
-      image.src = choice.image;
-      image.decode?.().catch(() => {});
-      featuredDraw.preview = {id:choice.id, image};
-    }
-    return;
+    button.classList.add('is-armed');button.setAttribute('aria-pressed','true');button.focus({preventScroll:true});window.syncMobileInterface?.();return;
   }
   return drawFeaturedDrink(Number(button.dataset.pickFeature));
 }
@@ -813,78 +925,66 @@ function dissolveFeaturedCard(image,isCurrent,hero) {
   if (!context || !image?.naturalWidth) return Promise.resolve();
   const canvasRect=canvas.getBoundingClientRect(),{width,height}=canvasRect;
   if (!width || !height) return Promise.resolve();
-  const compact = isCompactViewport();
-  const ratio = Math.min(window.devicePixelRatio||1,compact?1.25:2);
+  const ratio=Math.min(window.devicePixelRatio||1,isCompactViewport()?1.5:2);
   canvas.width=Math.round(width*ratio);canvas.height=Math.round(height*ratio);context.scale(ratio,ratio);
-  const sample=document.createElement('canvas'),resolution=compact?108:144;
+  const sample=document.createElement('canvas'),resolution=144;
   sample.width=sample.height=resolution;
   const sampler=sample.getContext('2d',{willReadFrequently:true});
   if (!sampler) return Promise.resolve();
-  const size=Math.min(width,height),left=(width-size)/2,top=(height-size)/2;
+  mountFeaturedGlass(hero,image);
+  const destination=featuredImageRect(canvasRect,image);
+  const size=destination.width,left=destination.x,top=destination.y;
   let pixels;
   try {sampler.drawImage(image,0,0,resolution,resolution);pixels=sampler.getImageData(0,0,resolution,resolution).data;} catch {return Promise.resolve();}
   const targets=[];
   for(let y=0;y<resolution;y++)for(let x=0;x<resolution;x++){
     const offset=(y*resolution+x)*4;
-    if(pixels[offset+3]>96)targets.push({x:left+x/resolution*size,y:top+y/resolution*size,color:[pixels[offset],pixels[offset+1],pixels[offset+2]]});
+    if(pixels[offset+3]>96)targets.push({x:left+x/resolution*size,y:top+y/resolution*size,color:[pixels[offset],pixels[offset+1],pixels[offset+2]],alpha:pixels[offset+3]/255});
   }
-  const count=Math.min(targets.length,compact?380:1450);
+  const count=Math.min(targets.length,isCompactViewport()?1100:2200);
   if (!count) return Promise.resolve();
   const card=$('.draw-card.is-picked').getBoundingClientRect();
+  const sourceBounds={x:card.left-canvasRect.left,y:card.top-canvasRect.top,width:card.width,height:card.height};
   const particles=Array.from({length:count},(_,i)=>{
-    const target=targets[Math.floor(i*targets.length/count)],angle=Math.random()*Math.PI*2,spread=.25+Math.random()*.7;
-    const seed = Math.random();
-    return {
-      ...target,
-      color:`rgb(${target.color.join(',')})`,
-      startX:card.left-canvasRect.left+card.width*(.075+Math.random()*.85),
-      startY:card.top-canvasRect.top+card.height*(.075+Math.random()*.85),
-      burstX:width/2+Math.cos(angle)*width*(compact ? .34 : .5)*spread,
-      burstY:height/2+Math.sin(angle)*height*(compact ? .4 : .57)*spread,
-      swirl:(Math.random()-.5)*(compact?30:38),
-      seed, radius:.65+Math.random()*.9
-    };
+    // One sample per stratum avoids a regular scanline/moire lattice in the
+    // assembled particle cup while retaining even coverage of its silhouette.
+    const target=targets[Math.floor((i+Math.random())*targets.length/count)],seed=Math.random();
+    const path=createFeaturedRevealPath(sourceBounds,target,{width,height});
+    return {...target,path,seed,cssColor:`rgb(${target.color.join(',')})`,radius:.7+seed*.45};
   });
   let titleLayer;
-  try {titleLayer=createFeaturedTitleParticles(hero);} catch {titleLayer=null;}
-  drawFeaturedTitleParticles(titleLayer,0);
-  const smooth=v=>{const n=Math.max(0,Math.min(1,v));return n*n*(3-2*n);};
-  const mix=(a,b,t)=>a+(b-a)*t;
+  try {titleLayer=createFeaturedCopyTransition(hero);} catch {titleLayer=null;}
   return new Promise(resolve=>{
-    let start, forming = false;
-    featuredDraw.cancelParticles=resolve;
-    function frame(time) {
-      try {
-        drawFrame(time);
-      } catch {
-        resolve();
-      }
+    let start,resolveAnimation;featuredDraw.cancelParticles=resolve;
+    function frame(time){
+      try{paintFrame(time);}catch{resolve();}
     }
-    function drawFrame(time){
+    function paintFrame(time){
       if(!isCurrent()){resolve();return;}
-      start??=time;
-      const progress=Math.min((time-start)/(compact?920:1380),1);
-      if(!forming && progress>=(compact ? .55 : .64)){
-        $('#hero-feature').dataset.drawPhase='forming';
-        forming = true;
+      if(start===undefined){
+        start=time;
+        const startOffset=FEATURED_PHOTO_START_MS/FEATURED_REVEAL_MS;
+        const frames=[{opacity:0,offset:0},{opacity:0,offset:startOffset},...Array.from({length:16},(_,i)=>({opacity:featuredSmooth((i+1)/16),offset:startOffset+(1-startOffset)*(i+1)/16}))];
+        resolveAnimation=$('.feature-glass').animate(frames,{duration:FEATURED_REVEAL_MS,fill:'both',easing:'linear'});
+        resolveAnimation.startTime=time;
+        featuredDraw.animations.push(resolveAnimation);resolveAnimation.finished.catch(()=>{});
       }
-      const scatter=1-Math.pow(1-Math.min(progress/(compact ? .38 : .33),1),3);
-      const gather=smooth((progress-(compact ? .17 : .3))/(compact ? .68 : .58));
-      const photograph=smooth((progress-(compact ? .63 : .76))/(compact ? .33 : .24));
-      const arcScale=Math.sin(gather*Math.PI);
-      const fadeIn=smooth(progress/.08);
+      const elapsed=time-start,progress=Math.min(elapsed/FEATURED_GATHER_MS,1);
+      const feature=$('#hero-feature');
+      if(elapsed>=FEATURED_PHOTO_START_MS&&feature.dataset.drawPhase!=='resolving')feature.dataset.drawPhase='resolving';
+      else if(progress>=.65&&elapsed<FEATURED_PHOTO_START_MS&&feature.dataset.drawPhase!=='forming')feature.dataset.drawPhase='forming';
+      const photograph=featuredRevealPhotoOpacity(elapsed/FEATURED_GATHER_MS);
       context.clearRect(0,0,width,height);
       for(const p of particles){
-        const arc=arcScale*p.swirl;
-        const x=mix(mix(p.startX,p.burstX,scatter),p.x,gather)+arc,y=mix(mix(p.startY,p.burstY,scatter),p.y,gather)-Math.abs(arc)*.45;
-        const visible=compact?smooth((progress-p.seed*.09)/.14):fadeIn;
-        context.globalAlpha=(1-photograph)*(.48+p.seed*.52)*visible;
-        context.fillStyle=p.color;context.beginPath();context.arc(x,y,mix(p.radius,size/resolution*.75,gather),0,Math.PI*2);context.fill();
+        const position=featuredParticleAt(p.path,progress);
+        const depth=Math.sin(position.travel*Math.PI);
+        const radius=p.radius+(Math.max(.9,size/resolution*.62)-p.radius)*position.travel+depth*.25;
+        context.globalAlpha=(1-photograph)*(.86+p.seed*.14)*p.alpha*featuredSmooth((progress-p.path.delay)/.12);
+        context.fillStyle=p.cssColor;context.beginPath();context.arc(position.x,position.y,radius,0,Math.PI*2);context.fill();
       }
-      if(photograph>0){context.globalAlpha=photograph;context.drawImage(image,left,top,size,size);}
       context.globalAlpha=1;
-      drawFeaturedTitleParticles(titleLayer,progress);
-      if(progress<1)featuredDraw.frame=requestAnimationFrame(frame);
+      startFeaturedCopyTransition(titleLayer,time);
+      if(elapsed<FEATURED_REVEAL_MS)featuredDraw.frame=requestAnimationFrame(frame);
       else{featuredDraw.cancelParticles=null;resolve();}
     }
     featuredDraw.frame=requestAnimationFrame(frame);
@@ -894,52 +994,33 @@ async function drawFeaturedDrink(index) {
   if(featuredDraw.busy||state.view!=='menu'||$('#hero-feature').dataset.drawState!=='choosing')return;
   const next=featuredDraw.choices[index];
   if(!next)return;
-  const compact = isCompactViewport();
-  const preview = featuredDraw.preview;
+  // Capture before the explicit mobile confirm disappears during the reveal.
+  const restoreInitiatorFocus = $('.draw-deck').contains(document.activeElement) || Boolean(document.activeElement?.matches?.('[data-confirm-feature]'));
   stopFeaturedDraw();
-  const feature = $('#hero-feature');
-  const cards = [...document.querySelectorAll('[data-pick-feature]')];
-  // Read the lifted card's position before leaving the choosing state.
-  const armedTransforms = compact && !menuReducedMotion.matches && feature.animate
-    ? cards.map(card => getComputedStyle(card).transform)
-    : null;
-  const confirmButton = $('[data-confirm-feature]');
-  const revealHadFocus = compact && document.activeElement === confirmButton;
   const revision=featuredDraw.revision,isCurrent=()=>revision===featuredDraw.revision;
   featuredDraw.busy=true;
-  feature.dataset.drawState='drawing';feature.dataset.drawPhase='selected';feature.setAttribute('aria-busy','true');
+  const feature=$('#hero-feature');feature.dataset.drawState='drawing';feature.dataset.drawPhase='selected';feature.setAttribute('aria-busy','true');
   document.querySelectorAll('[data-pick-feature]').forEach(card=>card.setAttribute('aria-disabled','true'));
 
   $('#feature-announcement').textContent=`正在揭晓第${index+1}张牌的推荐。`;
-  const image = prepareFeaturedImage(next, preview?.id === next.id ? preview.image : null);
+  const pendingImage=requestFeaturedImage(next);
+  const ready=prepareFeaturedImage(next,pendingImage);
   const animate=(node,frames,options)=>{const animation=node.animate(frames,options);featuredDraw.animations.push(animation);return animation.finished.catch(()=>{});};
   const reveal=()=>{
     if(!isCurrent())return;
-    stopFeaturedDraw();updateFeaturedDrink(next,image);
-    if(revealHadFocus && [confirmButton,document.body].includes(document.activeElement)) $('[data-draw-feature]').focus({preventScroll:true});
+    stopFeaturedDraw();updateFeaturedDrink(next, restoreInitiatorFocus, pendingImage);
     $('#feature-announcement').textContent=`今日为你抽到：${next.cn}，${next.tag}。可以查看配方，或再铺开七张牌。`;
   };
-  featuredDraw.finish = reveal;
-  try {
+  featuredDraw.finish=reveal;
+  try{
     if(!menuReducedMotion.matches&&feature.animate){
-      const photoReady = waitForFeaturedPhoto(image);
-      const selected=cards[index];
+      const cards=[...document.querySelectorAll('[data-pick-feature]')],selected=cards[index];
       selected.classList.add('is-picked');
       const target=$('.draw-particles').getBoundingClientRect(),deck=$('.draw-deck').getBoundingClientRect();
       const dx=target.left+target.width/2-deck.left-selected.offsetLeft-selected.offsetWidth/2;
       const dy=target.top+target.height/2-deck.top-selected.offsetTop-selected.offsetHeight/2;
       await Promise.all(cards.map((card,i)=>{
-        const from=armedTransforms?.[i] ?? getComputedStyle(card).transform;
-        if(compact){
-          const destination=`translate3d(${dx}px,${dy}px,0) rotate(-4deg) scale(1.045)`;
-          const frames=i===index
-            ? [{opacity:1,transform:from},{opacity:1,transform:destination}]
-            : [{opacity:1,transform:from},{opacity:0,transform:`${from} translateY(8px) scale(.98)`}];
-          return animate(card,frames,{
-            duration:i===index?330:175, delay:i===index?0:Math.abs(i-index)*9,
-            easing:'cubic-bezier(.2,.75,.25,1)', fill:'both'
-          });
-        }
+        const from=getComputedStyle(card).transform;
         const frames=i===index?[
           {opacity:1,transform:from,offset:0},
           {opacity:1,transform:`translate3d(${dx}px,${dy-5}px,70px) rotateX(8deg) rotateY(18deg) rotateZ(-5deg) scale(1.12)`,offset:.7},
@@ -947,17 +1028,17 @@ async function drawFeaturedDrink(index) {
         ]:[{opacity:1,transform:from},{opacity:0,transform:'translate3d(0,-40%,-65px) scale(.8)'}];
         return animate(card,frames,{duration:i===index?580:260,easing:'cubic-bezier(.16,1,.3,1)',fill:'forwards'});
       }));
-      if (!isCurrent()) return;
-      if (await photoReady && isCurrent()) {
-        feature.dataset.drawPhase='particles';
-        await Promise.all([animate($('.draw-card.is-picked'),[{opacity:1},{opacity:0}],{duration:compact?200:240,easing:compact?'ease-out':'linear',fill:'forwards'}),dissolveFeaturedCard(image,isCurrent,next)]);
-      }
     }
-  } catch {
-    // Motion is optional. Keep the selected drink available if rendering fails.
-  } finally {
-    reveal();
-  }
+    if(!isCurrent()||menuReducedMotion.matches||!feature.animate)return;
+    const image=await ready;
+    if(!isCurrent())return;
+    if(image){
+      feature.dataset.drawPhase='particles';
+      await Promise.all([animate($('.draw-card.is-picked'),[{opacity:1},{opacity:0}],{duration:280,easing:'ease-in-out',fill:'forwards'}),dissolveFeaturedCard(image,isCurrent,next)]);
+    }
+  }catch{
+    // Keep the selected recipe available if the animation cannot run.
+  }finally{reveal();}
 }
 function featuredReturnRoundRect(context,x,y,width,height,radius) {
   const r=Math.min(radius,width/2,height/2);
@@ -966,10 +1047,9 @@ function featuredReturnRoundRect(context,x,y,width,height,radius) {
 }
 function featuredReturnCardFace(card) {
   const width=card.offsetWidth,height=card.offsetHeight,computed=getComputedStyle(card);
-  const ratio = isCompactViewport()?1:2;
-  const canvas=document.createElement('canvas');canvas.width=Math.ceil(width*ratio);canvas.height=Math.ceil(height*ratio);
+  const canvas=document.createElement('canvas');canvas.width=Math.ceil(width*2);canvas.height=Math.ceil(height*2);
   const context=canvas.getContext('2d');if(!context)return null;
-  context.scale(ratio,ratio);
+  context.scale(2,2);
   const colors=computed.backgroundImage.match(/rgba?\([^)]*\)|#[\da-f]+/gi)||['#5b4945','#29232e'];
   const gradient=context.createLinearGradient(0,0,width,height);gradient.addColorStop(0,colors[0]);gradient.addColorStop(1,colors[1]||colors[0]);
   featuredReturnRoundRect(context,0,0,width,height,parseFloat(computed.borderRadius)||14);context.fillStyle=gradient;context.fill();
@@ -1017,9 +1097,7 @@ function captureFeaturedReturnHand() {
     const rootRect=clone.getBoundingClientRect(),deck=clone.querySelector('.draw-deck'),deckRect=deck.getBoundingClientRect(),deckStyle=getComputedStyle(deck);
     const perspective=parseFloat(deckStyle.perspective)||800,origin=deckStyle.perspectiveOrigin.split(' ').map(parseFloat);
     const hand=[...clone.querySelectorAll('.draw-card')];
-    const compact = isCompactViewport();
-    const strips = compact?1:5;
-    for(const card of compact?hand:hand.reverse()) {
+    for(const card of isCompactViewport()?hand:hand.reverse()) {
       const face=featuredReturnCardFace(card);if(!face)continue;
       const computed=getComputedStyle(card),matrix=new DOMMatrix(computed.transform),pivot=computed.transformOrigin.split(' ').map(parseFloat);
       const project=(x,y)=>{
@@ -1027,9 +1105,9 @@ function captureFeaturedReturnHand() {
         const px=point.x+pivot[0]+card.offsetLeft,py=point.y+pivot[1]+card.offsetTop,scale=perspective/(perspective-point.z);
         return {x:deckRect.left-rootRect.left+origin[0]+(px-origin[0])*scale,y:deckRect.top-rootRect.top+origin[1]+(py-origin[1])*scale};
       };
-      // Desktop perspective needs small strips. The mobile cards use flat transforms.
-      for(let row=0;row<strips;row++) {
-        const y0=face.height*row/strips,y1=face.height*(row+1)/strips;
+      // Small strips preserve the CSS perspective instead of stretching one flat rectangle.
+      for(let row=0;row<5;row++) {
+        const y0=face.height*row/5,y1=face.height*(row+1)/5;
         const strip=[{x:0,y:y0},{x:face.width,y:y0},{x:face.width,y:y1},{x:0,y:y1}],target=strip.map(point=>project(point.x,point.y));
         featuredReturnTriangle(context,face,[strip[0],strip[1],strip[2]],[target[0],target[1],target[2]]);
         featuredReturnTriangle(context,face,[strip[0],strip[2],strip[3]],[target[0],target[2],target[3]]);
@@ -1038,39 +1116,64 @@ function captureFeaturedReturnHand() {
     return bitmap;
   } finally {clone.remove();}
 }
-function buildFeaturedReturnLayers() {
+function featuredReturnKey(bounds) {
+  return [featuredId,bounds.width,bounds.height,innerWidth,innerHeight,devicePixelRatio,isCompactViewport()].join(':');
+}
+function queueFeaturedReturnPreparation() {
+  clearTimeout(featuredReturnCache.timer);
+  if(menuReducedMotion.matches)return;
+  // Prepare the reusable geometry while the cup rests, never on its return frame.
+  featuredReturnCache.timer=setTimeout(()=>{
+    featuredReturnCache.timer=0;
+    if(featuredDraw.busy||featuredDraw.shake||state.view!=='menu'||$('#hero-feature').dataset.drawState!=='revealed')return;
+    try {prepareFeaturedReturnModel();} catch {featuredReturnCache.key=null;featuredReturnCache.model=null;}
+  },160);
+}
+function prepareFeaturedReturnModel() {
   const feature=$('#hero-feature'),bounds=feature.getBoundingClientRect(),image=$('.feature-glass .drink-photo');
   if(!image?.naturalWidth)return null;
-  const compact = isCompactViewport();
-  const ratio=Math.min(window.devicePixelRatio||1,compact?1.25:2);
-  const from=document.createElement('canvas');from.width=Math.ceil(bounds.width*ratio);from.height=Math.ceil(bounds.height*ratio);
+  const key=featuredReturnKey(bounds);
+  if(featuredReturnCache.key===key&&featuredReturnCache.model)return featuredReturnCache.model;
+  const from=document.createElement('canvas'),resolution=144;from.width=from.height=resolution;
   const source=from.getContext('2d',{willReadFrequently:true});if(!source)return null;
-  source.scale(ratio,ratio);
-  const glass=$('.feature-glass').getBoundingClientRect(),size=Math.min(glass.width,glass.height);
-  source.filter=getComputedStyle(image).filter;source.drawImage(image,glass.left-bounds.left+(glass.width-size)/2,glass.top-bounds.top+(glass.height-size)/2,size,size);source.filter='none';
+  // Sample only the transparent asset. Rasterizing a full DPR-sized panel with
+  // drop-shadow and then reading it back caused the large click-time stall.
+  source.drawImage(image,0,0,resolution,resolution);
+  const destination=featuredImageRect(bounds,image);
   const to=captureFeaturedReturnHand();if(!to)return null;
-  const sample=(bitmap,scale=1)=>{
+  const sample=(bitmap,step,rect)=>{
     const data=bitmap.getContext('2d',{willReadFrequently:true}).getImageData(0,0,bitmap.width,bitmap.height).data,points=[];
-    for(let y=0;y<bitmap.height;y+=Math.round(3*scale))for(let x=0;x<bitmap.width;x+=Math.round(3*scale)){const offset=(y*bitmap.width+x)*4;if(data[offset+3]>96)points.push({x:x/scale,y:y/scale,color:[data[offset],data[offset+1],data[offset+2]],alpha:data[offset+3]/255});}
+    for(let y=0;y<bitmap.height;y+=step)for(let x=0;x<bitmap.width;x+=step){const offset=(y*bitmap.width+x)*4;if(data[offset+3]>96)points.push({x:rect?rect.x+x/bitmap.width*rect.width:x,y:rect?rect.y+y/bitmap.height*rect.height:y,color:[data[offset],data[offset+1],data[offset+2]],alpha:data[offset+3]/255});}
     return points;
   };
-  const fromPoints=sample(from,ratio),toPoints=sample(to);if(!fromPoints.length||!toPoints.length)return null;
-  const count=Math.min(Math.max(fromPoints.length,toPoints.length),compact?450:1700);
-  const center={x:glass.left-bounds.left+glass.width/2,y:glass.top-bounds.top+glass.height/2};
+  const fromPoints=sample(from,1,destination),toPoints=sample(to,3);if(!fromPoints.length||!toPoints.length)return null;
+  const count=Math.min(Math.max(fromPoints.length,toPoints.length),isCompactViewport()?800:1700);
   const particles=Array.from({length:count},(_,index)=>{
-    const angle=Math.random()*Math.PI*2,distance=24+Math.random()*Math.min(bounds.width*.32,150);
-    return {start:fromPoints[Math.floor(index*fromPoints.length/count)],target:toPoints[Math.floor(index*toPoints.length/count)],burst:{x:center.x+Math.cos(angle)*distance,y:center.y+Math.sin(angle)*distance*.62},swirl:(Math.random()-.5)*36};
+    const start=fromPoints[Math.floor(index*fromPoints.length/count)],target=toPoints[Math.floor(index*toPoints.length/count)],seed=Math.random();
+    const path=createFeaturedParticlePath(start,target,{bend:12+seed*14,lift:10,delay:(target.x/bounds.width)*.065+seed*.05,end:.88+seed*.1});
+    const coefficients=axis=>[start[axis],3*(path.first[axis]-start[axis]),3*(start[axis]-2*path.first[axis]+path.second[axis]),target[axis]-start[axis]+3*(path.first[axis]-path.second[axis])];
+    const [red,green,blue]=start.color,dr=(target.color[0]-red)/32,dg=(target.color[1]-green)/32,db=(target.color[2]-blue)/32;
+    const colors=Array.from({length:33},(_,step)=>`rgb(${Math.round(red+dr*step)},${Math.round(green+dg*step)},${Math.round(blue+db*step)})`);
+    return {start,target,path,x:coefficients('x'),y:coefficients('y'),colors,radius:.62+seed*.48};
   });
+  const text=prepareFeaturedReturnText();
+  const model={w:bounds.width,h:bounds.height,particles,text};
+  featuredReturnCache.key=key;featuredReturnCache.model=model;
+  return model;
+}
+function buildFeaturedReturnLayers() {
+  const model=prepareFeaturedReturnModel();if(!model)return null;
+  const ratio=Math.min(window.devicePixelRatio||1,isCompactViewport()?1.5:2);
   const canvas=$('.return-particles'),context=canvas.getContext('2d');if(!context)return null;
-  canvas.width=Math.ceil(bounds.width*ratio);canvas.height=Math.ceil(bounds.height*ratio);context.scale(ratio,ratio);
-  return {context,w:bounds.width,h:bounds.height,from,particles};
+  canvas.width=Math.ceil(model.w*ratio);canvas.height=Math.ceil(model.h*ratio);context.scale(ratio,ratio);
+  return {...model,context};
 }
 async function restartFeaturedChoices() {
   const feature=$('#hero-feature');
   if(featuredDraw.busy||state.view!=='menu'||feature.dataset.drawState!=='revealed')return;
   $('.draw-hand-scroll')?.scrollTo?.({left:0,behavior:'instant'});
-  const compact = isCompactViewport();
-  if(menuReducedMotion.matches || (compact && !feature.animate)) {dealFeaturedChoices(true);return;}
+  // Mobile uses the same return, with fewer particles and sharp native cards.
+  if(menuReducedMotion.matches||typeof feature.animate!=='function') {dealFeaturedChoices(true);return;}
   stopFeaturedDraw();featuredDraw.busy=true;
   const revision=featuredDraw.revision,isCurrent=()=>revision===featuredDraw.revision;
   let dealt=false;
@@ -1084,66 +1187,42 @@ async function restartFeaturedChoices() {
   featuredDraw.finish=complete;
   try {
     const layer=buildFeaturedReturnLayers();if(!layer){complete();return;}
-    let text;
-    try {text=createFeaturedTitleParticles(null,'choosing');} catch {text=null;}
-    const {context,w,h,from,particles}=layer;
+    const text=createFeaturedCopyTransition(null,'choosing',layer.text);
+    const {context,w,h,particles}=layer;
     const cards=[...document.querySelectorAll('[data-pick-feature]')];
-    cards.forEach(card=>{
-      card.classList.remove('is-picked','is-armed');
-      if (!compact) {
-        card.style.setProperty('--return-opacity','0');
-        card.style.setProperty('--return-shadow','0');
-      }
-    });
-    context.drawImage(from,0,0,w,h);drawFeaturedTitleParticles(text,0);
+    cards.forEach(card=>{card.classList.remove('is-picked','is-armed');card.style.setProperty('--return-opacity','0');});
     feature.dataset.drawState='returning';feature.dataset.drawPhase='returning-scatter';feature.classList.add('is-returning');feature.setAttribute('aria-busy','true');
     document.querySelectorAll('[data-pick-feature]').forEach(card=>card.setAttribute('aria-disabled','true'));
     $('#feature-announcement').textContent='酒杯正在散成粒子，重新组成七张推荐牌。';
-    if(compact){
-      cards.forEach((card,index)=>{
-        const animation = card.animate([{opacity:0},{opacity:1}],{
-          delay:490+Math.abs(index-3)*18, duration:355, easing:'cubic-bezier(.2,.7,.25,1)', fill:'both'
-        });
-        animation.finished.catch(()=>{});
-        featuredDraw.animations.push(animation);
-      });
-    }
-    const smooth=value=>{const t=Math.max(0,Math.min(1,value));return t*t*(3-2*t);},mix=(a,b,t)=>a+(b-a)*t;
     await new Promise(resolve=>{
-      let start, forming = false;
-      featuredDraw.cancelParticles=resolve;
+      let start;featuredDraw.cancelParticles=resolve;
       function frame(time) {
+        try{paintFrame(time);}catch{resolve();}
+      }
+      function paintFrame(time) {
         if(!isCurrent()){resolve();return;}
-        start??=time;
-        const progress=Math.min((time-start)/(compact?1080:1680),1);
-        const scatter=1-Math.pow(1-Math.min(progress/.34,1),3);
-        const gather=smooth((progress-(compact ? .17 : .27))/(compact ? .63 : .5));
-        const material=smooth((progress-.58)/.29);
-        if(!compact){
-          const shadow=(smooth((progress-.66)/.27)*.48).toFixed(4);
+        if(start===undefined){
+          start=time;
+          const opacityFrames=Array.from({length:25},(_,i)=>({opacity:featuredSmooth(i/24),offset:i/24}));
+          // Opacity is composited by the browser; card style/shadow never changes
+          // inside the particle loop. The live cup retains its original shadow.
           cards.forEach((card,index)=>{
-            const formed=smooth((progress-.55-Math.abs(index-3)*.014)/.29);
-            card.style.setProperty('--return-opacity',formed.toFixed(4));
-            card.style.setProperty('--return-shadow',shadow);
+            const animation=card.animate(opacityFrames,{duration:800,delay:1600*(.42+Math.abs(index-3)*.012),fill:'both',easing:'linear'});
+            animation.startTime=time;animation.finished.catch(()=>{});featuredDraw.animations.push(animation);
           });
+          const animation=$('.feature-glass').animate(opacityFrames.map(frame=>({...frame,opacity:1-frame.opacity})),{duration:576,fill:'both',easing:'linear'});
+          animation.startTime=time;animation.finished.catch(()=>{});featuredDraw.animations.push(animation);
         }
-        if(!forming && progress>=(compact ? .45 : .52)){
-          feature.dataset.drawPhase='returning-forming';
-          forming = true;
-        }
+        const progress=Math.min((time-start)/1600,1),material=featuredSmooth((progress-.56)/.42);
+        if(progress>=.52&&feature.dataset.drawPhase!=='returning-forming')feature.dataset.drawPhase='returning-forming';
         context.clearRect(0,0,w,h);
-        context.globalAlpha=1-smooth(progress/.22);context.drawImage(from,0,0,w,h);
-        const arcScale=Math.sin(gather*Math.PI);
-        const particleOpacity=(1-material)*smooth(progress/.08);
         for(const particle of particles){
-          const arc=arcScale*particle.swirl;
-          const x=mix(mix(particle.start.x,particle.burst.x,scatter),particle.target.x,gather)+arc,y=mix(mix(particle.start.y,particle.burst.y,scatter),particle.target.y,gather)-Math.abs(arc)*.35;
-          const color=particle.start.color.map((channel,index)=>Math.round(mix(channel,particle.target.color[index],gather)));
-          context.fillStyle=`rgb(${color.join(',')})`;context.globalAlpha=particleOpacity*mix(particle.start.alpha,particle.target.alpha,gather);
-          context.beginPath();context.arc(x,y,1.1,0,Math.PI*2);context.fill();
+          const gather=featuredSmooth((progress-particle.path.delay)/(particle.path.end-particle.path.delay)),x=particle.x,y=particle.y;
+          context.fillStyle=particle.colors[Math.round(gather*32)];context.globalAlpha=.82*(1-material)*featuredSmooth((progress-particle.path.delay)/.18)*(particle.start.alpha+(particle.target.alpha-particle.start.alpha)*gather);
+          context.beginPath();context.arc(((x[3]*gather+x[2])*gather+x[1])*gather+x[0],((y[3]*gather+y[2])*gather+y[1])*gather+y[0],particle.radius+Math.sin(gather*Math.PI)*.18,0,Math.PI*2);context.fill();
         }
         context.globalAlpha=1;
-        drawFeaturedTitleParticles(text,progress);
+        startFeaturedCopyTransition(text,time);
         if(progress<1)featuredDraw.frame=requestAnimationFrame(frame);else{featuredDraw.cancelParticles=null;resolve();}
       }
       featuredDraw.frame=requestAnimationFrame(frame);
@@ -1159,8 +1238,20 @@ renderFeaturedDrink();
 $('#menu-summary').textContent = `${DRINKS.filter(d=>d.category==='classic').length} 款经典 · ${DRINKS.filter(d=>d.category==='signature').length} 款特调 · ${DRINKS.filter(d=>d.category==='zero').length} 款无酒精`;
 $('.hero-copy').insertAdjacentHTML('beforeend', `<button class="pantry-entry" data-open-pantry>家里有材料？用原料选一杯 ${icon('arrow')}</button>`);
 renderMenu({animate:false}); renderSaved();
-menuReducedMotion.addEventListener('change', () => {selectionMotion.finish?.(false);stopCatalogResponse();renderMenu({animate:false});});
-document.addEventListener('visibilitychange',()=>{if(document.hidden)selectionMotion.finish?.(false);});
+menuReducedMotion.addEventListener('change', () => {
+  selectionMotion.finish?.(false); stopCatalogResponse(); renderMenu({animate:false});
+  if (menuReducedMotion.matches) {
+    stopViewTransition();
+    if (detailMotion.closing) closeDetail(false); else stopDetailTransition();
+    stopDetailShake();
+  }
+});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden) {
+    selectionMotion.finish?.(false); stopViewTransition();
+    if (detailMotion.closing) closeDetail(false); else stopDetailTransition();
+  }
+});
 
 // Keep one highlight per single-selection group, including wrapped mobile rows.
 // Positioning and hover use separate layers; hit targets stay fixed and text never pulses.

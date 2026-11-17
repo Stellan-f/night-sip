@@ -1106,5 +1106,103 @@ const DRINKS = [
     "texture": "轻盈、清冽微苦",
     "category": "zero",
     "prep": "黄瓜榨汁并过滤；选择明确无酒精的汤力水。"
+  },
+  {
+    "id": "peach-jasmine-soda",
+    "image": "assets/peach-jasmine-soda-realistic.webp",
+    "name": "White Peach Jasmine Soda",
+    "cn": "白桃茉莉气泡",
+    "number": "26",
+    "base": "none",
+    "baseName": "无酒精",
+    "flavor": "tea",
+    "body": "light",
+    "tag": "白桃花茶",
+    "color": "#e8bca0",
+    "surface": "#3b302c",
+    "note": "PEACH & JASMINE",
+    "short": "白桃的柔甜与茉莉花香，被细密气泡轻轻托起。",
+    "description": "白桃果泥与冷却茉莉茶交融，少量柠檬提亮果香，苏打水带来轻快气泡。这是一款尚未实调的原创无酒精概念配方。",
+    "ingredients": [
+      [
+        "白桃果泥",
+        "30 ml"
+      ],
+      [
+        "冷却茉莉茶",
+        "60 ml"
+      ],
+      [
+        "鲜柠檬汁",
+        "10 ml"
+      ],
+      [
+        "苏打水",
+        "90 ml"
+      ],
+      [
+        "糖浆（1:1）",
+        "5 ml"
+      ]
+    ],
+    "method": "将白桃果泥、茉莉茶、柠檬汁与糖浆在高球杯中搅匀，加入冰块，再沿杯壁注入苏打水，轻搅一圈。可用新鲜白桃薄片装饰。",
+    "layers": [
+      "白桃果香",
+      "茉莉茶韵",
+      "轻快气泡"
+    ],
+    "texture": "轻盈、花茶清香与细泡",
+    "category": "zero",
+    "conceptNote": "原创无酒精概念配方，尚未实调；图片为 AI 生成的风味示意。",
+    "prepNote": "茉莉茶冲泡后滤去茶叶并冷却；糖浆按糖与水 1:1 调匀。按果泥甜度微调糖浆，苏打水最后加入，不摇和。",
+    "ingredientNote": "使用无酒精的白桃果泥、茉莉茶和普通苏打水；不使用桃味利口酒或发酵茶饮。茉莉茶通常含咖啡因。",
+    "prep": "茉莉茶滤去茶叶并冷却；糖浆按糖与水 1:1 调匀，按果泥甜度试调。苏打水最后加入，不摇和。"
+  },
+  {
+    "id": "berry-coconut-cloud",
+    "image": "assets/berry-coconut-cloud-realistic.webp",
+    "name": "Berry Coconut Cloud",
+    "cn": "莓果椰云",
+    "number": "27",
+    "base": "none",
+    "baseName": "无酒精",
+    "flavor": "fruity",
+    "body": "silky",
+    "tag": "草莓椰香",
+    "color": "#d99aa5",
+    "surface": "#3c2d36",
+    "note": "BERRY & COCONUT",
+    "short": "草莓的清亮果香，落进柔滑轻盈的一层椰云。",
+    "description": "草莓果泥与无糖椰奶组成柔滑的粉色酒体，少量柠檬带来清亮果酸，糖浆收拢酸甜。这是一款尚未实调的原创无酒精概念配方。",
+    "ingredients": [
+      [
+        "草莓果泥",
+        "45 ml"
+      ],
+      [
+        "无糖椰奶",
+        "90 ml"
+      ],
+      [
+        "鲜柠檬汁",
+        "5 ml"
+      ],
+      [
+        "糖浆（1:1）",
+        "10 ml"
+      ]
+    ],
+    "method": "先将椰奶搅匀，与草莓果泥、柠檬汁、糖浆和冰块充分摇匀，过滤入装有新冰的矮杯。表面保留自然细泡，可用新鲜草莓片装饰。",
+    "layers": [
+      "鲜草莓",
+      "柔滑椰香",
+      "明亮果酸"
+    ],
+    "texture": "柔滑、莓果酸甜与轻细泡",
+    "category": "zero",
+    "conceptNote": "原创无酒精概念配方，尚未实调；图片为 AI 生成的风味示意。",
+    "prepNote": "使用无糖椰奶，开封前摇匀；糖浆按糖与水 1:1 调匀。柠檬先按少量加入，按草莓酸甜度试调；摇匀后尽快饮用。",
+    "ingredientNote": "草莓果泥、椰奶与糖浆均选无酒精产品，不使用草莓利口酒。椰奶不等同于椰奶油；本配方无需乳制品或蛋清。",
+    "prep": "使用无糖椰奶并先搅匀，不能自动以椰奶油代替；糖浆按糖与水 1:1 调匀。按草莓酸甜度试调，摇匀后尽快饮用。"
   }
 ];

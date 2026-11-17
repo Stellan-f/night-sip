@@ -69,7 +69,9 @@ const PANTRY_RECIPES = {
   'osmanthus-pear':['gin','osmanthus','pear','lemon','honey-syrup'],
   'matcha-cloud':['vodka','matcha','coconut-milk','honey-syrup'],
   'plum-dusk':['bourbon','smoked-tea','plum-syrup','lemon'],
-  'cucumber-tonic':['cucumber','lime','syrup','tonic']
+  'cucumber-tonic':['cucumber','lime','syrup','tonic'],
+  'peach-jasmine-soda':['peach','jasmine','lemon','soda','syrup'],
+  'berry-coconut-cloud':['strawberry','coconut-milk','lemon','syrup']
 };
 function matchPantry(drinks, selected, onlyZero = false) {
   const stock = new Set(selected);
