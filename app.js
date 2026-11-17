@@ -22,10 +22,14 @@ function toast(message) {
   const node = $('#toast'); node.textContent = message; node.classList.add('visible');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => node.classList.remove('visible'), 3000);
 }
+function glassIllustration(d) {
+  if (d.art) return d.art.replace('<svg ', '<svg class="glass-art" aria-hidden="true" focusable="false" ');
+  return `<svg class="glass-art" viewBox="0 0 54 54" fill="none" stroke="var(--drink)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="#i-glass" x="15" y="15" width="24" height="24"/></svg>`;
+}
 function glass(d) {
   return d.image
     ? `<img class="glass-art drink-photo photo-${d.id}" src="${d.image}" alt="" width="1280" height="1280" decoding="async" loading="lazy" draggable="false">`
-    : d.art.replace('<svg ', '<svg class="glass-art" aria-hidden="true" focusable="false" ');
+    : glassIllustration(d);
 }
 function style(d) { return `--drink:${d.color};--surface:${d.surface}`; }
 function saveButton(d, extra = '') {
@@ -524,7 +528,7 @@ function stopFeaturedDraw() {
   featuredDraw.finish = null;
   featuredDraw.preview = null;
 }
-function updateFeaturedDrink(hero) {
+function updateFeaturedDrink(hero, image) {
   const feature = $('#hero-feature');
   const restoreFocus = $('.draw-deck').contains(document.activeElement);
   featuredDraw.hero = hero;
@@ -535,9 +539,27 @@ function updateFeaturedDrink(hero) {
   feature.dataset.featured = hero.id;
   feature.dataset.drawState = 'revealed';
   feature.dataset.drawPhase = 'revealed';
-  $('.feature-glass').innerHTML = glass(hero);
-  const image = $('.feature-glass .drink-photo');
-  if (image) {image.loading = 'eager'; image.fetchPriority = 'high';}
+  const glassSlot = $('.feature-glass');
+  const photoReady = Boolean(image?.complete && image.naturalWidth);
+  glassSlot.innerHTML = photoReady ? '' : glassIllustration(hero);
+  if (image && (photoReady || !image.complete)) {
+    image.className = `glass-art drink-photo photo-${hero.id}`;
+    image.alt = '';
+    image.width = image.height = 1280;
+    image.decoding = 'async';
+    image.draggable = false;
+    image.hidden = !photoReady;
+    if (!photoReady) {
+      const illustration = glassSlot.firstElementChild;
+      image.addEventListener('load', () => {
+        if (image.parentElement !== glassSlot) return;
+        illustration.remove();
+        image.hidden = false;
+      }, {once:true});
+      image.addEventListener('error', () => image.remove(), {once:true});
+    }
+    glassSlot.append(image);
+  }
   $('.hero-caption').textContent = categories[hero.category];
   $('.feature-info p').textContent = '今日为你抽到';
   $('.feature-info h2').textContent = hero.name;
@@ -588,19 +610,26 @@ function renderFeaturedDrink() {
   dealFeaturedChoices();
 }
 function prepareFeaturedImage(hero, preloaded) {
-  if (!hero.image) return Promise.resolve(true);
+  if (!hero.image) return null;
   const image = preloaded && (!preloaded.complete || preloaded.naturalWidth) ? preloaded : new Image();
+  image.loading = 'eager';
+  image.fetchPriority = 'high';
   if (image !== preloaded) image.src = hero.image;
-  if (image.complete) return Promise.resolve(image.naturalWidth > 0 ? image : null);
+  return image;
+}
+function waitForFeaturedPhoto(image) {
+  if (!image || image.complete) return Promise.resolve(Boolean(image?.naturalWidth));
   return new Promise(resolve => {
-    const timer = setTimeout(() => done(null), 2400);
-    function done(result) {
+    const done = () => {
       clearTimeout(timer);
-      image.onload = image.onerror = null;
-      resolve(result);
-    }
-    image.onload = () => done(image);
-    image.onerror = () => done(null);
+      image.removeEventListener('load', done);
+      image.removeEventListener('error', done);
+      resolve(Boolean(image.complete && image.naturalWidth));
+    };
+    // Bound the wait for photo particles. The same image can keep loading after reveal.
+    const timer = setTimeout(done, 750);
+    image.addEventListener('load', done);
+    image.addEventListener('error', done);
   });
 }
 function captureFeaturedCopy(hero, mode, compact) {
@@ -731,7 +760,7 @@ function drawFeaturedTitleParticles(layer,progress) {
 }
 function shakeFeaturedDrink() {
   if(featuredDraw.busy||$('#hero-feature').dataset.drawState!=='revealed')return;
-  const image=$('.feature-glass .drink-photo');if(!image?.animate)return;
+  const image=$('.feature-glass .glass-art:not([hidden])');if(!image?.animate)return;
   featuredDraw.shake?.cancel();
   const base=getComputedStyle(image).transform;
   const reduced=menuReducedMotion.matches;
@@ -824,7 +853,14 @@ function dissolveFeaturedCard(image,isCurrent,hero) {
   return new Promise(resolve=>{
     let start, forming = false;
     featuredDraw.cancelParticles=resolve;
-    function frame(time){
+    function frame(time) {
+      try {
+        drawFrame(time);
+      } catch {
+        resolve();
+      }
+    }
+    function drawFrame(time){
       if(!isCurrent()){resolve();return;}
       start??=time;
       const progress=Math.min((time-start)/(compact?920:1380),1);
@@ -875,22 +911,18 @@ async function drawFeaturedDrink(index) {
   document.querySelectorAll('[data-pick-feature]').forEach(card=>card.setAttribute('aria-disabled','true'));
 
   $('#feature-announcement').textContent=`正在揭晓第${index+1}张牌的推荐。`;
-  const ready = prepareFeaturedImage(next, preview?.id === next.id ? preview.image : null);
+  const image = prepareFeaturedImage(next, preview?.id === next.id ? preview.image : null);
   const animate=(node,frames,options)=>{const animation=node.animate(frames,options);featuredDraw.animations.push(animation);return animation.finished.catch(()=>{});};
   const reveal=()=>{
     if(!isCurrent())return;
-    stopFeaturedDraw();updateFeaturedDrink(next);
+    stopFeaturedDraw();updateFeaturedDrink(next,image);
     if(revealHadFocus && [confirmButton,document.body].includes(document.activeElement)) $('[data-draw-feature]').focus({preventScroll:true});
     $('#feature-announcement').textContent=`今日为你抽到：${next.cn}，${next.tag}。可以查看配方，或再铺开七张牌。`;
   };
-  const recover=()=>{
-    if(!isCurrent())return;
-    dealFeaturedChoices(true);
-    $('#feature-announcement').textContent='这杯图片暂时未加载，请再选一张。';toast('图片暂时未加载，请再选一张。');
-  };
-  featuredDraw.finish=async()=>{const image=await ready;if(!isCurrent())return;if(image)reveal();else recover();};
-  try{
+  featuredDraw.finish = reveal;
+  try {
     if(!menuReducedMotion.matches&&feature.animate){
+      const photoReady = waitForFeaturedPhoto(image);
       const selected=cards[index];
       selected.classList.add('is-picked');
       const target=$('.draw-particles').getBoundingClientRect(),deck=$('.draw-deck').getBoundingClientRect();
@@ -915,17 +947,17 @@ async function drawFeaturedDrink(index) {
         ]:[{opacity:1,transform:from},{opacity:0,transform:'translate3d(0,-40%,-65px) scale(.8)'}];
         return animate(card,frames,{duration:i===index?580:260,easing:'cubic-bezier(.16,1,.3,1)',fill:'forwards'});
       }));
+      if (!isCurrent()) return;
+      if (await photoReady && isCurrent()) {
+        feature.dataset.drawPhase='particles';
+        await Promise.all([animate($('.draw-card.is-picked'),[{opacity:1},{opacity:0}],{duration:compact?200:240,easing:compact?'ease-out':'linear',fill:'forwards'}),dissolveFeaturedCard(image,isCurrent,next)]);
+      }
     }
-    if(!isCurrent())return;
-    const image=await ready;
-    if(!isCurrent())return;
-    if(!image)throw new Error('featured-image-unavailable');
-    if(!menuReducedMotion.matches&&feature.animate){
-      feature.dataset.drawPhase='particles';
-      await Promise.all([animate($('.draw-card.is-picked'),[{opacity:1},{opacity:0}],{duration:compact?200:240,easing:compact?'ease-out':'linear',fill:'forwards'}),dissolveFeaturedCard(image,isCurrent,next)]);
-    }
+  } catch {
+    // Motion is optional. Keep the selected drink available if rendering fails.
+  } finally {
     reveal();
-  }catch{recover();}
+  }
 }
 function featuredReturnRoundRect(context,x,y,width,height,radius) {
   const r=Math.min(radius,width/2,height/2);
