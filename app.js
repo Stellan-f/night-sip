@@ -42,6 +42,9 @@ function glass(d, displaySize = '') {
   return `<img class="glass-art drink-photo photo-${d.id}" src="${d.image}"${sources} alt="" width="640" height="640" decoding="async" loading="lazy" draggable="false">`;
 }
 function style(d) { return `--drink:${d.color};--surface:${d.surface}`; }
+function drinkBloom(drink) {
+  return drink.image ? `url("assets/bloom/${drink.id}.webp")` : 'none';
+}
 function saveButton(d, extra = '') {
   const saved = state.saved.has(d.id);
   return `<button class="${extra || 'icon-button save-button'}" data-save="${d.id}" aria-pressed="${saved}" aria-label="${saved ? '取消收藏' : '收藏'}${d.cn}">${icon('heart')}${extra ? (saved ? '已收藏' : '加入我的酒单') : ''}</button>`;
@@ -381,6 +384,7 @@ function restoreDetailFocus() {
 function openDetail(id, trigger) {
   const d = DRINKS.find(x => x.id === id); if (!d) return;
   const dialog = $('#detail-dialog'), wasOpen = dialog.open, previousDetail = state.detail;
+  dialog.style.setProperty('--glass-bloom', drinkBloom(d));
   const pose = wasOpen ? getComputedStyle(dialog) : null;
   const snapshot = pose ? {opacity:pose.opacity, transform:pose.transform} : {opacity:0, transform:`translateY(${isCompactViewport() ? 26 : 16}px)`};
   stopDetailTransition();
@@ -602,6 +606,7 @@ function mountFeaturedGlass(hero, preparedImage) {
   const slot=$('.feature-glass');
   const existing=slot.querySelector('.drink-photo');
   if(existing&&existing.getAttribute('src')===hero.image)return existing;
+  slot.style.setProperty('--glass-bloom',drinkBloom(hero));
   if(!hero.image){slot.innerHTML=glassIllustration(hero);return null;}
   const image=preparedImage||requestFeaturedImage(hero);
   image.className=`glass-art drink-photo photo-${hero.id}`;
