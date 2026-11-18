@@ -3,7 +3,7 @@
   const hero=document.querySelector('#hero-feature');
   const atmosphere=document.createElement('div');
   atmosphere.className='ice-atmosphere';atmosphere.setAttribute('aria-hidden','true');
-  atmosphere.innerHTML='<i class="ice-cube"></i>'.repeat(3)+[9,5,12,6,4,7].map((size,i)=>`<i class="fizz-dot" style="--bubble-size:${size}px;--bubble-x:${[12,87,80,20,92,7][i]}%;--bubble-delay:${[-2,-5,-1,-4,-6,-3][i]}s"></i>`).join('');
+  atmosphere.innerHTML = [7, 4, 9, 5].map((size, i) => `<i class="fizz-dot" style="--bubble-size:${size}px;--bubble-x:${[11, 85, 91, 17][i]}%;--bubble-delay:${[-2, -5, -1, -6][i]}s"></i>`).join('');
   const ensureHeroDecor=()=>{
     if(!hero.querySelector('.ice-atmosphere'))hero.prepend(atmosphere);
     const hint=hero.querySelector('.feature-hint');
@@ -25,7 +25,18 @@
   });
   const discovery=document.querySelector('#zero-discovery');
   const newDrinks=DRINKS.filter(drink=>['peach-jasmine-soda','berry-coconut-cloud'].includes(drink.id));
-  discovery.innerHTML=`<div class="zero-intro"><h2>不含酒精，也很尽兴。</h2><p>两杯新风味，把茶香和果香留给今晚。</p></div><div class="zero-list">${newDrinks.map(drink=>`<button class="zero-suggestion" data-detail="${drink.id}" aria-label="查看${drink.cn}配方"><img src="${drink.image}" width="100" height="100" alt="" loading="lazy" decoding="async"><span><strong>${drink.cn}</strong><small>新品 · 无酒精</small></span></button>`).join('')}</div>`;
+  discovery.innerHTML = `
+    <div class="zero-intro">
+      <h2>无酒精特调</h2>
+      <p>一杯清透，一杯绵密。</p>
+    </div>
+    <div class="zero-list">
+      ${newDrinks.map(drink => `
+        <button class="zero-suggestion" data-detail="${drink.id}" aria-label="查看${drink.cn}配方">
+          <span class="zero-copy"><small lang="en">${drink.note}</small><strong>${drink.cn}</strong><span class="zero-recipe">查看配方 ${icon('arrow')}</span></span>
+          <img src="${drink.image}" width="172" height="172" alt="" loading="lazy" decoding="async">
+        </button>`).join('')}
+    </div>`;
   const grid=document.querySelector('#drink-grid');
   const addBubbles=()=>{
     grid.querySelectorAll('.drink-open').forEach(button=>{

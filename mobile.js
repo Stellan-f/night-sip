@@ -40,19 +40,25 @@
   window.syncMobileInterface=syncMobileInterface;
   document.addEventListener('click',event=>{if(event.target.closest('[data-mobile-pantry-find]'))showPantryResults();});
   const layout=window.matchMedia('(max-width:760px), (max-width:960px) and (max-height:500px)');
-  layout.addEventListener('change',()=>{
+  const hero=document.querySelector('#hero-feature'),portrait=matchMedia('(orientation:portrait)');
+  const geometry=()=>[window.innerWidth,hero.offsetWidth,hero.offsetHeight,portrait.matches,layout.matches,devicePixelRatio].join(':');
+  let lastGeometry=geometry(),lastCompact=layout.matches;
+  function updateLayout(){
+    const next=geometry();
+    // Mobile address bars and soft keyboards change the viewport height while
+    // leaving the deck, its particle paths and the chosen drink exactly in place.
+    if(next===lastGeometry)return;
+    lastGeometry=next;
     selectionMotion.finish?.(false);featuredDraw.finish?.();
-    if(state.view==='quiz'&&state.selectionMode==='pantry')renderPantry();
-    syncMobileInterface();
-  });
-  let layoutWidth=window.innerWidth,layoutHeight=window.innerHeight;
-  window.addEventListener('resize',()=>{
-    if(window.innerWidth===layoutWidth&&window.innerHeight===layoutHeight)return;
-    layoutWidth=window.innerWidth;layoutHeight=window.innerHeight;
-    selectionMotion.finish?.(false);featuredDraw.finish?.();
+    if(layout.matches!==lastCompact&&state.view==='quiz'&&state.selectionMode==='pantry')renderPantry();
+    lastCompact=layout.matches;
     syncMobileInterface();
     queueFeaturedReturnPreparation();
-  },{passive:true});
+  }
+  layout.addEventListener('change',updateLayout);
+  portrait.addEventListener('change',updateLayout);
+  window.addEventListener('resize',updateLayout,{passive:true});
+  if('ResizeObserver' in window)new ResizeObserver(updateLayout).observe(hero);
   const updateKeyboard=()=>{
     const field=document.activeElement?.matches('input,textarea');
     const keyboard=isCompactViewport()&&field&&window.visualViewport&&window.innerHeight-window.visualViewport.height>150;

@@ -16,7 +16,7 @@ const selectionMotion = {revision:0, animations:[], displayed:'taste', busy:fals
 const featuredDraw = {busy:false, revision:0, animations:[], hero:null, finish:null, frame:0, cancelParticles:null, choices:[], shake:null};
 const featuredReturnCache = {key:null, model:null, timer:0};
 const featuredGlyphCache = new Map();
-const FEATURED_GATHER_MS=1780, FEATURED_RESOLVE_MS=360;
+const FEATURED_GATHER_MS=1780, FEATURED_RESOLVE_MS=310;
 const FEATURED_PHOTO_START_MS=FEATURED_GATHER_MS*.92;
 const FEATURED_REVEAL_MS=FEATURED_PHOTO_START_MS+FEATURED_RESOLVE_MS;
 let featuredId;
@@ -34,10 +34,12 @@ function glassIllustration(d) {
     ? d.art.replace('<svg ', '<svg class="glass-art" aria-hidden="true" focusable="false" ')
     : `<svg class="glass-art" viewBox="0 0 54 54" fill="none" stroke="var(--drink)" stroke-width="1.2" aria-hidden="true" focusable="false"><use href="#i-glass" x="15" y="15" width="24" height="24"/></svg>`;
 }
-function glass(d) {
-  return d.image
-    ? `<img class="glass-art drink-photo photo-${d.id}" src="${d.image}" alt="" width="1280" height="1280" decoding="async" loading="lazy" draggable="false">`
-    : glassIllustration(d);
+function glass(d, displaySize = '') {
+  if (!d.image) return glassIllustration(d);
+  const sources = displaySize
+    ? ` srcset="assets/thumbnails/${d.id}.webp 320w, ${d.image} 640w" sizes="${displaySize}"`
+    : '';
+  return `<img class="glass-art drink-photo photo-${d.id}" src="${d.image}"${sources} alt="" width="640" height="640" decoding="async" loading="lazy" draggable="false">`;
 }
 function style(d) { return `--drink:${d.color};--surface:${d.surface}`; }
 function saveButton(d, extra = '') {
@@ -45,7 +47,7 @@ function saveButton(d, extra = '') {
   return `<button class="${extra || 'icon-button save-button'}" data-save="${d.id}" aria-pressed="${saved}" aria-label="${saved ? '取消收藏' : '收藏'}${d.cn}">${icon('heart')}${extra ? (saved ? '已收藏' : '加入我的酒单') : ''}</button>`;
 }
 function card(d) {
-  return `<article class="drink-card" style="${style(d)}"><div class="drink-visual"><button class="drink-open" data-detail="${d.id}" aria-label="查看${d.cn}配方">${glass(d)}<span class="drink-kind kind-${d.category}">${categoryNames[d.category]}</span><span class="card-note">${d.note}</span></button>${saveButton(d)}</div><div class="card-body"><div class="card-heading"><button class="name-button" data-detail="${d.id}"><h3>${d.name}</h3><span>${d.cn}</span></button><button class="icon-button" data-detail="${d.id}" aria-label="查看${d.cn}详情">${icon('arrow')}</button></div><div class="card-tags"><span>${d.tag}</span><span>${d.baseName}</span></div><p class="card-description">${d.short}</p></div></article>`;
+  return `<article class="drink-card" style="${style(d)}"><div class="drink-visual"><button class="drink-open" data-detail="${d.id}" aria-label="查看${d.cn}配方">${glass(d, '(max-width: 359px) 230px, (max-width: 760px) 42vw, 280px')}<span class="drink-kind kind-${d.category}">${categoryNames[d.category]}</span><span class="card-note">${d.note}</span></button>${saveButton(d)}</div><div class="card-body"><div class="card-heading"><button class="name-button" data-detail="${d.id}"><h3>${d.name}</h3><span>${d.cn}</span></button><button class="icon-button" data-detail="${d.id}" aria-label="查看${d.cn}详情">${icon('arrow')}</button></div><div class="card-tags"><span>${d.tag}</span><span>${d.baseName}</span></div><p class="card-description">${d.short}</p></div></article>`;
 }
 const catalogResponse = {animations:[]};
 function stopCatalogResponse() {
@@ -254,7 +256,7 @@ function filterPantryOptions() {
 }
 function pantryResultCard(result) {
   const d = result.drink, ready = result.missing.length === 0;
-  return `<article class="pantry-result" style="${style(d)}"><div class="pantry-result-head"><div class="pantry-result-art">${glass(d)}</div><div><span class="pantry-badge ${ready ? '' : 'missing'}">${ready ? '原料已齐' : `还缺 ${result.missing.length} 样`}</span><h3>${d.cn}</h3><p>${d.name} · ${d.baseName}</p></div></div><p class="pantry-match">已选 ${result.matched} / ${result.total} 项配方原料（含冰块）</p><p class="pantry-missing">${ready ? '这杯的主料和冰块都已选，核对用量后就可以准备了。' : `还需要：${result.missing.join('、')}`}</p><div class="pantry-result-actions"><button class="button secondary" data-detail="${d.id}">查看配方 ${icon('arrow')}</button>${saveButton(d)}</div></article>`;
+  return `<article class="pantry-result" style="${style(d)}"><div class="pantry-result-head"><div class="pantry-result-art">${glass(d, '90px')}</div><div><span class="pantry-badge ${ready ? '' : 'missing'}">${ready ? '原料已齐' : `还缺 ${result.missing.length} 样`}</span><h3>${d.cn}</h3><p>${d.name} · ${d.baseName}</p></div></div><p class="pantry-match">已选 ${result.matched} / ${result.total} 项配方原料（含冰块）</p><p class="pantry-missing">${ready ? '这杯的主料和冰块都已选，核对用量后就可以准备了。' : `还需要：${result.missing.join('、')}`}</p><div class="pantry-result-actions"><button class="button secondary" data-detail="${d.id}">查看配方 ${icon('arrow')}</button>${saveButton(d)}</div></article>`;
 }
 function renderPantry() {
   const compact=isCompactViewport(),options=$('#pantry-options'),layout=compact?'compact':'wide';
@@ -446,7 +448,10 @@ function renderRecommendation() {
 document.addEventListener('click', e => {
   const b = e.target.closest('button,a'); if (!b) return;
   if (b.matches('.brand')) {e.preventDefault(); setView('menu');}
-  if (b.dataset.view) setView(b.dataset.view);
+  if (b.dataset.view) {
+    if (b.dataset.startWith === 'taste') state.selectionMode = 'taste';
+    setView(b.dataset.view);
+  }
   if (b.hasAttribute('data-draw-feature')) restartFeaturedChoices();
   if (b.hasAttribute('data-pick-feature')) selectFeaturedCard(b,e);
   if (b.hasAttribute('data-shake-feature')) shakeFeaturedDrink();
@@ -570,6 +575,7 @@ function stopFeaturedDraw() {
   clearTimeout(featuredReturnCache.timer);featuredReturnCache.timer=0;
   featuredDraw.shake?.cancel(); featuredDraw.shake=null;
   $('#hero-feature')?.classList.remove('is-recomposing','is-returning');
+  if ($('#hero-feature')) delete $('#hero-feature').dataset.liveCopy;
   document.querySelectorAll('.feature-copy-layer').forEach(layer=>layer.remove());
   $('.feature-info')?.removeAttribute('aria-hidden');
   featuredDraw.revision++;
@@ -637,10 +643,7 @@ function updateFeaturedDrink(hero, restoreInitiatorFocus = false, image) {
   feature.dataset.drawState = 'revealed';
   feature.dataset.drawPhase = 'revealed';
   mountFeaturedGlass(hero,image);
-  $('.hero-caption').textContent = categories[hero.category];
-  $('.feature-info p').textContent = '今日为你抽到';
-  $('.feature-info h2').textContent = hero.name;
-  $('.feature-info small').textContent = `${hero.cn} · ${hero.tag}`;
+  setFeaturedInfo('今日为你抽到',hero.name,`${hero.cn} · ${hero.tag}`,categories[hero.category]);
   $('.draw-hint span').textContent = '再抽一杯';
   $('[data-draw-feature]').setAttribute('aria-label',`再铺开七张牌，当前是${hero.cn}`);
   $('[data-shake-feature]').setAttribute('aria-label',`摇一摇${hero.cn}酒杯`);
@@ -667,9 +670,7 @@ function dealFeaturedChoices(focus = false, keepMotion = false) {
   feature.dataset.drawPhase = 'choosing';
   delete feature.dataset.featured;
   $('.feature-title').style.minHeight = '';
-  $('.feature-info p').textContent = '今晚的灵感';
-  $('.feature-info h2').textContent = '下一杯，会是谁？';
-  $('.feature-info small').textContent = '七张牌，七种新的风味。';
+  setFeaturedInfo('今晚的灵感','下一杯，会是谁？','七张牌，七种新的风味。','');
 
   $('.feature-detail').disabled = true;
   $('.feature-detail').removeAttribute('data-detail');
@@ -688,6 +689,13 @@ function renderFeaturedDrink() {
   $('#hero-feature').innerHTML = `<div class="hero-art feature-stage"><button class="feature-draw feature-shake" data-shake-feature type="button" aria-label="摇一摇推荐酒杯" title="点酒杯，摇一摇"><span class="feature-glass"></span></button><div class="draw-hand-scroll" aria-label="可左右滑动的推荐手牌"><div class="draw-deck" role="group" aria-label="七张叠放的推荐牌，任选一张">${Array.from({length:7},(_,index)=>`<button class="draw-card" type="button" data-pick-feature="${index}" style="--slot:${index};--fan:${(index-3)*2.2};--bend:${Math.abs(index-3)*2}" aria-label="抽第${index+1}张推荐牌">${icon('glass')}<span>NIGHT SIP</span><span class="draw-card-number">${String(index+1).padStart(2,'0')}</span></button>`).join('')}</div></div><canvas class="draw-particles" aria-hidden="true"></canvas><div class="feature-hint"><button class="mobile-reveal" data-confirm-feature type="button" hidden><span>揭晓这张</span>${icon('arrow')}</button><span class="draw-hint-message">${icon('shuffle')}<span data-hint-copy>${window.matchMedia('(hover:none)').matches?'轻点挑牌，再点揭晓':'悬停挑选，点击揭晓'}</span></span><button class="draw-hint" type="button" data-draw-feature aria-label="再铺开七张推荐牌">${icon('shuffle')}<span data-hint-copy>再抽一杯</span></button></div></div><div class="feature-info"><div class="feature-meta"><p></p><span class="hero-caption"></span></div><div class="feature-title"><h2></h2></div><small></small></div><button class="feature-detail" type="button">查看配方 ${icon('arrow')}</button><canvas class="return-particles" aria-hidden="true"></canvas><canvas class="title-particles" aria-hidden="true"></canvas>`;
   dealFeaturedChoices();
 }
+function setFeaturedInfo(kicker,title,subtitle,category) {
+  const info=$('#hero-feature > .feature-info');
+  for(const [selector,value] of [['p',kicker],['h2',title],['small',subtitle],['.hero-caption',category]]){
+    const node=info.querySelector(selector);
+    if(node.textContent!==value)node.textContent=value;
+  }
+}
 function requestFeaturedImage(hero) {
   if(!hero.image)return null;
   const image = new Image();
@@ -697,7 +705,6 @@ function requestFeaturedImage(hero) {
 }
 function prepareFeaturedImage(hero, image = requestFeaturedImage(hero)) {
   if(!image)return Promise.resolve(null);
-  if (image.complete) return Promise.resolve(image.naturalWidth > 0 ? image : null);
   return new Promise(resolve => {
     const timer=setTimeout(done,1400);
     function done() {
@@ -705,6 +712,11 @@ function prepareFeaturedImage(hero, image = requestFeaturedImage(hero)) {
       image.removeEventListener('load',done);image.removeEventListener('error',done);
       resolve(image.naturalWidth?image:null);
     }
+    if(typeof image.decode==='function'){
+      image.decode().then(done,done);
+      return;
+    }
+    if(image.complete){done();return;}
     image.addEventListener('load',done);image.addEventListener('error',done);
   });
 }
@@ -720,15 +732,25 @@ function createFeaturedParticlePath(start,target,{bend=12,lift=0,delay=0,end=.94
     first:{x:start.x+dx*.28+nx*bend,y:start.y+dy*.28+ny*bend-lift},
     second:{x:target.x-dx*.22+nx*bend*.45,y:target.y-dy*.22+ny*bend*.45-lift*.3}};
 }
-function featuredParticleAt(path,progress) {
-  const t=featuredSmooth((progress-path.delay)/(path.end-path.delay)),u=1-t;
-  return {x:u*u*u*path.start.x+3*u*u*t*path.first.x+3*u*t*t*path.second.x+t*t*t*path.target.x,
-    y:u*u*u*path.start.y+3*u*u*t*path.first.y+3*u*t*t*path.second.y+t*t*t*path.target.y,travel:t};
+function featuredFlightTime(path,progress) {
+  const t=Math.min(1,Math.max(0,(progress-path.delay)/(path.end-path.delay)));
+  // A short quadratic acceleration/deceleration leaves the last arriving
+  // grains in motion while the assembled body resolves into glass.
+  const ramp=.16,speed=1/(1-ramp);
+  if(t<ramp)return speed*t*t/(2*ramp);
+  if(t>1-ramp)return 1-speed*(1-t)*(1-t)/(2*ramp);
+  return speed*(t-ramp/2);
+}
+function featuredParticleAt(path,progress,point={}) {
+  const t=featuredFlightTime(path,progress),u=1-t;
+  point.x=u*u*u*path.start.x+3*u*u*t*path.first.x+3*u*t*t*path.second.x+t*t*t*path.target.x;
+  point.y=u*u*u*path.start.y+3*u*u*t*path.first.y+3*u*t*t*path.second.y+t*t*t*path.target.y;
+  point.travel=t;
+  return point;
 }
 function featuredRevealPhotoOpacity(progress) {
-  // The particles first build the complete cup; photography only resolves its
-  // fine detail after the last particle has landed. Never preview its silhouette.
-  return featuredSmooth((progress*FEATURED_GATHER_MS-FEATURED_PHOTO_START_MS)/FEATURED_RESOLVE_MS);
+  const t=Math.min(1,Math.max(0,(progress*FEATURED_GATHER_MS-FEATURED_PHOTO_START_MS)/FEATURED_RESOLVE_MS));
+  return t*t*(3-2*t);
 }
 function createFeaturedRevealPath(cardBounds,target,bounds,random=Math.random) {
   // Start positions are independent of destination pixels. Mapping corresponding
@@ -737,7 +759,7 @@ function createFeaturedRevealPath(cardBounds,target,bounds,random=Math.random) {
     y:cardBounds.y+cardBounds.height*(.06+random()*.88)};
   const angle=random()*Math.PI*2,spread=.6+random()*.4;
   const rx=bounds.width*.46*spread,ry=bounds.height*.47*spread;
-  return {start,target,delay:random()*.065,end:.78+random()*.08,
+  return {start,target,delay:random()*.065,end:.87+random()*.12,
     first:{x:bounds.width*.5+Math.cos(angle)*rx,y:bounds.height*.48+Math.sin(angle)*ry},
     second:{x:target.x+Math.cos(angle+.65)*rx*.62,y:target.y+Math.sin(angle+.65)*ry*.62}};
 }
@@ -792,43 +814,53 @@ function featuredGlyphMask(character,font,ratio) {
   featuredGlyphCache.set(key,mask);return mask;
 }
 function sampleFeaturedCopyText(copy,bounds) {
-  const ratio=Math.min(devicePixelRatio||1,2),points=[],roles=new Map();
+  const all={runs:[],length:0},roles=new Map(),range=document.createRange();
   const selectors=['.feature-meta p','.hero-caption','.feature-title h2','.feature-info small','.draw-hint span','.draw-hint-message [data-hint-copy]','.feature-detail'];
+  // Keep one positioned mask per glyph. A dense title used to expand tens of
+  // thousands of pixels into JS objects to select only a few hundred of them.
+  const addRun=(bag,run)=>{bag.length+=run.mask.points.length/3;bag.runs.push({run,end:bag.length});};
   for(const selector of selectors){
     const leaf=copy.querySelector(selector);if(!leaf)continue;
     const css=getComputedStyle(leaf),box=leaf.getBoundingClientRect();
     if(!box.width||!box.height||css.visibility==='hidden')continue;
     const font=`${css.fontStyle} ${css.fontWeight} ${css.fontSize} ${css.fontFamily}`;
-    const rolePoints=[];
+    const role={runs:[],length:0};
     for(const node of leaf.childNodes){
       if(node.nodeType!==Node.TEXT_NODE)continue;
       let offset=0;
       for(const character of node.textContent){
         const length=character.length;
         if(!character.trim()){offset+=length;continue;}
-        const range=document.createRange();range.setStart(node,offset);range.setEnd(node,offset+length);offset+=length;
-        const rect=range.getBoundingClientRect(),mask=featuredGlyphMask(character,font,ratio);if(!mask)continue;
+        range.setStart(node,offset);range.setEnd(node,offset+length);offset+=length;
+        const rect=range.getBoundingClientRect(),mask=featuredGlyphMask(character,font,1);if(!mask?.points.length)continue;
         const baseline=rect.top-bounds.top+(rect.height-mask.ascent-mask.descent)/2+mask.ascent;
-        for(let i=0;i<mask.points.length;i+=3){
-          const point={x:rect.left-bounds.left+mask.points[i],y:baseline+mask.points[i+1],alpha:mask.points[i+2],color:css.color,role:selector};
-          rolePoints.push(point);points.push(point);
-        }
+        const run={left:rect.left-bounds.left,baseline,mask,color:css.color,role:selector};
+        addRun(role,run);addRun(all,run);
       }
     }
-    if(rolePoints.length)roles.set(selector,rolePoints);
+    if(role.length)roles.set(selector,role);
   }
-  return {points,roles};
+  return {all,roles};
+}
+function chooseFeaturedGlyphPoint(bag,fraction) {
+  const index=Math.min(bag.length-1,Math.floor(fraction*bag.length));
+  let lo=0,hi=bag.runs.length-1;
+  while(lo<hi){
+    const middle=(lo+hi)>>>1;
+    if(index<bag.runs[middle].end)hi=middle;else lo=middle+1;
+  }
+  const run=bag.runs[lo].run,i=3*(index-(lo?bag.runs[lo-1].end:0));
+  return {x:run.left+run.mask.points[i],y:run.baseline+run.mask.points[i+1],alpha:run.mask.points[i+2],color:run.color,role:run.role};
 }
 function buildFeaturedTextParticleModel(layers) {
   const bounds=$('#hero-feature').getBoundingClientRect();
   const from=sampleFeaturedCopyText(layers.from,bounds),to=sampleFeaturedCopyText(layers.to,bounds);
-  if(!from.points.length||!to.points.length)return null;
-  const count=Math.min(Math.max(from.points.length,to.points.length),isCompactViewport()?1000:1800),groups=new Map();
+  if(!from.all.length||!to.all.length)return null;
+  const count=Math.min(Math.max(from.all.length,to.all.length),isCompactViewport()?1000:1800),groups=new Map();
   let minY=bounds.height,maxY=0;
   for(let i=0;i<count;i++){
-    const target=to.points[Math.floor((i+Math.random())*to.points.length/count)];
-    const candidates=from.roles.get(target.role)||from.points;
-    const start=candidates[Math.floor(Math.random()*candidates.length)],seed=Math.random();
+    const target=chooseFeaturedGlyphPoint(to.all,(i+Math.random())/count);
+    const start=chooseFeaturedGlyphPoint(from.roles.get(target.role)||from.all,Math.random()),seed=Math.random();
     const path=createFeaturedParticlePath(start,target,{bend:(seed-.5)*48,lift:12+seed*12,delay:seed*.065,end:.74+seed*.08});
     const coefficients=axis=>[start[axis],3*(path.first[axis]-start[axis]),3*(start[axis]-2*path.first[axis]+path.second[axis]),target[axis]-start[axis]+3*(path.first[axis]-path.second[axis])];
     const particle={x:coefficients('x'),y:coefficients('y'),delay:path.delay,end:path.end,alpha:target.alpha,radius:.52+seed*.25};
@@ -849,8 +881,13 @@ function createFeaturedCopyTransition(hero, mode, prepared) {
   if(model&&context){canvas.width=Math.ceil(model.w*ratio);canvas.height=Math.ceil(model.h*ratio);context.scale(ratio,ratio);}
   layers.from.style.opacity='1';
   feature.classList.add('is-recomposing');
-  $('.feature-info').setAttribute('aria-hidden','true');
-  return {...layers,model,context};
+  feature.dataset.liveCopy=hero?'revealed':'choosing';
+  const liveInfo=feature.querySelector(':scope > .feature-info');
+  const destination=layers.to.querySelector('.feature-info');
+  setFeaturedInfo(...['p','h2','small','.hero-caption'].map(selector=>destination.querySelector(selector).textContent));
+  liveInfo.setAttribute('aria-hidden','true');
+  destination.style.opacity='0';
+  return {...layers,model,context,canvas,liveInfo};
 }
 function startFeaturedCopyTransition(layer,time) {
   if(!layer)return;
@@ -859,27 +896,32 @@ function startFeaturedCopyTransition(layer,time) {
     layer.started=true;layer.startTime=time;
     // The native target stays absent until every text particle has landed.
     // It only supplies the final crisp edge, never substitutes for the motion.
-    for(const [node,incoming] of [[layer.from,false],[layer.to,true]]){
-      const frames=incoming?[{opacity:0,offset:0},{opacity:0,offset:.86},...Array.from({length:16},(_,i)=>({opacity:featuredSmooth((i+1)/16),offset:.86+.14*(i+1)/16}))]:
-        [{opacity:1,offset:0},...Array.from({length:16},(_,i)=>({opacity:1-featuredSmooth((i+1)/16),offset:.14*(i+1)/16})),{opacity:0,offset:1}];
+    const incoming=[{opacity:0,offset:0},{opacity:0,offset:.86},...Array.from({length:16},(_,i)=>({opacity:featuredSmooth((i+1)/16),offset:.86+.14*(i+1)/16}))];
+    const outgoing=[{opacity:1,offset:0},...Array.from({length:16},(_,i)=>({opacity:1-featuredSmooth((i+1)/16),offset:.14*(i+1)/16})),{opacity:0,offset:1}];
+    const grains=incoming.map(frame=>({...frame,opacity:1-frame.opacity}));
+    for(const [node,frames] of [[layer.from,outgoing],[layer.to,incoming],[layer.liveInfo,incoming],[layer.canvas,grains]]){
       const animation=node.animate(frames,{duration:layer.duration,fill:'both',easing:'linear'});
       animation.startTime=time;animation.finished.catch(()=>{});featuredDraw.animations.push(animation);
     }
   }
   const {model,context}=layer;if(!model||!context)return;
   const progress=Math.min((time-layer.startTime)/layer.duration,1);
-  const opacity=featuredSmooth(progress/.10)*(1-featuredSmooth((progress-.86)/.14));
+  if(layer.settled)return;
+  const opacity=featuredSmooth(progress/.10);
   context.clearRect(0,model.clearTop,model.w,model.clearBottom-model.clearTop);
   for(const group of model.groups){
     context.fillStyle=group.color;
     for(const p of group.particles){
-      const t=featuredSmooth((progress-p.delay)/(p.end-p.delay)),x=p.x,y=p.y;
+      const t=featuredFlightTime(p,progress),x=p.x,y=p.y;
       const px=((x[3]*t+x[2])*t+x[1])*t+x[0],py=((y[3]*t+y[2])*t+y[1])*t+y[0];
       context.globalAlpha=opacity*p.alpha;
       context.fillRect(px-p.radius,py-p.radius,p.radius*2,p.radius*2);
     }
   }
   context.globalAlpha=1;
+  // Once the glyphs have landed, retain their actual pixels on the canvas.
+  // Only compositor opacity changes while the native title gains definition.
+  layer.settled=progress>=.82;
 }
 function shakeFeaturedDrink() {
   if(featuredDraw.busy||$('#hero-feature').dataset.drawState!=='revealed')return;
@@ -920,6 +962,30 @@ document.addEventListener('keydown',event=>{
   $(`[data-pick-feature="${target}"]`)?.focus({preventScroll:true});
 });
 
+const FEATURED_SAMPLE_SIZE=144;
+let featuredPhotoSample=null;
+function readFeaturedPixels(context){
+  const {width,height}=context.canvas;
+  const data=context.getImageData(0,0,width,height).data,indices=new Uint32Array(width*height);
+  let count=0;
+  for(let i=0;i<indices.length;i++)if(data[i*4+3]>96)indices[count++]=i;
+  return {width,height,data,indices,count};
+}
+function sampleFeaturedPhoto(image){
+  const src=image.currentSrc||image.src;
+  if(featuredPhotoSample?.src===src)return featuredPhotoSample;
+  const sample=document.createElement('canvas');sample.width=sample.height=FEATURED_SAMPLE_SIZE;
+  const context=sample.getContext('2d',{willReadFrequently:true});
+  if(!context)return null;
+  context.drawImage(image,0,0,sample.width,sample.height);
+  featuredPhotoSample={...readFeaturedPixels(context),src};
+  return featuredPhotoSample;
+}
+function featuredSamplePoint(sample,rect,fraction){
+  const index=sample.indices[Math.floor(fraction*sample.count)],offset=index*4,data=sample.data;
+  return {x:rect.x+(index%sample.width+.5)*rect.width/sample.width,y:rect.y+(Math.floor(index/sample.width)+.5)*rect.height/sample.height,
+    color:[data[offset],data[offset+1],data[offset+2]],alpha:data[offset+3]/255};
+}
 function dissolveFeaturedCard(image,isCurrent,hero) {
   const canvas=$('.draw-particles'),context=canvas.getContext('2d');
   if (!context || !image?.naturalWidth) return Promise.resolve();
@@ -927,35 +993,27 @@ function dissolveFeaturedCard(image,isCurrent,hero) {
   if (!width || !height) return Promise.resolve();
   const ratio=Math.min(window.devicePixelRatio||1,isCompactViewport()?1.5:2);
   canvas.width=Math.round(width*ratio);canvas.height=Math.round(height*ratio);context.scale(ratio,ratio);
-  const sample=document.createElement('canvas'),resolution=144;
-  sample.width=sample.height=resolution;
-  const sampler=sample.getContext('2d',{willReadFrequently:true});
-  if (!sampler) return Promise.resolve();
   mountFeaturedGlass(hero,image);
   const destination=featuredImageRect(canvasRect,image);
-  const size=destination.width,left=destination.x,top=destination.y;
-  let pixels;
-  try {sampler.drawImage(image,0,0,resolution,resolution);pixels=sampler.getImageData(0,0,resolution,resolution).data;} catch {return Promise.resolve();}
-  const targets=[];
-  for(let y=0;y<resolution;y++)for(let x=0;x<resolution;x++){
-    const offset=(y*resolution+x)*4;
-    if(pixels[offset+3]>96)targets.push({x:left+x/resolution*size,y:top+y/resolution*size,color:[pixels[offset],pixels[offset+1],pixels[offset+2]],alpha:pixels[offset+3]/255});
-  }
-  const count=Math.min(targets.length,isCompactViewport()?1100:2200);
+  let sample;
+  try{sample=sampleFeaturedPhoto(image);}catch{return Promise.resolve();}
+  const count=Math.min(sample?.count||0,isCompactViewport()?1100:2200);
   if (!count) return Promise.resolve();
   const card=$('.draw-card.is-picked').getBoundingClientRect();
   const sourceBounds={x:card.left-canvasRect.left,y:card.top-canvasRect.top,width:card.width,height:card.height};
   const particles=Array.from({length:count},(_,i)=>{
     // One sample per stratum avoids a regular scanline/moire lattice in the
     // assembled particle cup while retaining even coverage of its silhouette.
-    const target=targets[Math.floor((i+Math.random())*targets.length/count)],seed=Math.random();
+    const target=featuredSamplePoint(sample,destination,(i+Math.random())/count),seed=Math.random();
     const path=createFeaturedRevealPath(sourceBounds,target,{width,height});
     return {...target,path,seed,cssColor:`rgb(${target.color.join(',')})`,radius:.7+seed*.45};
   });
   let titleLayer;
   try {titleLayer=createFeaturedCopyTransition(hero);} catch {titleLayer=null;}
   return new Promise(resolve=>{
-    let start,resolveAnimation;featuredDraw.cancelParticles=resolve;
+    const feature=$('#hero-feature'),position={};
+    const landingRadius=Math.max(.9,destination.width/FEATURED_SAMPLE_SIZE*.62);
+    let start,settled=false;featuredDraw.cancelParticles=resolve;
     function frame(time){
       try{paintFrame(time);}catch{resolve();}
     }
@@ -964,28 +1022,31 @@ function dissolveFeaturedCard(image,isCurrent,hero) {
       if(start===undefined){
         start=time;
         const startOffset=FEATURED_PHOTO_START_MS/FEATURED_REVEAL_MS;
-        const frames=[{opacity:0,offset:0},{opacity:0,offset:startOffset},...Array.from({length:16},(_,i)=>({opacity:featuredSmooth((i+1)/16),offset:startOffset+(1-startOffset)*(i+1)/16}))];
-        resolveAnimation=$('.feature-glass').animate(frames,{duration:FEATURED_REVEAL_MS,fill:'both',easing:'linear'});
-        resolveAnimation.startTime=time;
-        featuredDraw.animations.push(resolveAnimation);resolveAnimation.finished.catch(()=>{});
+        const frames=[{opacity:0,offset:0},{opacity:0,offset:startOffset},...Array.from({length:16},(_,i)=>{
+          const offset=startOffset+(1-startOffset)*(i+1)/16;
+          return {opacity:featuredRevealPhotoOpacity(offset*FEATURED_REVEAL_MS/FEATURED_GATHER_MS),offset};
+        })];
+        for(const [node,keys] of [[$('.feature-glass'),frames],[canvas,frames.map(key=>({...key,opacity:1-key.opacity}))]]){
+          const animation=node.animate(keys,{duration:FEATURED_REVEAL_MS,fill:'both',easing:'linear'});
+          animation.startTime=time;animation.finished.catch(()=>{});featuredDraw.animations.push(animation);
+        }
       }
       const elapsed=time-start,progress=Math.min(elapsed/FEATURED_GATHER_MS,1);
-      const feature=$('#hero-feature');
       if(elapsed>=FEATURED_PHOTO_START_MS&&feature.dataset.drawPhase!=='resolving')feature.dataset.drawPhase='resolving';
       else if(progress>=.65&&elapsed<FEATURED_PHOTO_START_MS&&feature.dataset.drawPhase!=='forming')feature.dataset.drawPhase='forming';
-      const photograph=featuredRevealPhotoOpacity(elapsed/FEATURED_GATHER_MS);
-      context.clearRect(0,0,width,height);
-      for(const p of particles){
-        const position=featuredParticleAt(p.path,progress);
-        const depth=Math.sin(position.travel*Math.PI);
-        const radius=p.radius+(Math.max(.9,size/resolution*.62)-p.radius)*position.travel+depth*.25;
-        context.globalAlpha=(1-photograph)*(.86+p.seed*.14)*p.alpha*featuredSmooth((progress-p.path.delay)/.12);
-        context.fillStyle=p.cssColor;context.beginPath();context.arc(position.x,position.y,radius,0,Math.PI*2);context.fill();
+      if(!settled){
+        context.clearRect(0,0,width,height);
+        for(const p of particles){
+          featuredParticleAt(p.path,progress,position);
+          const t=position.travel,radius=p.radius+(landingRadius-p.radius)*t+t*(1-t);
+          context.globalAlpha=(.86+p.seed*.14)*p.alpha*featuredSmooth((progress-p.path.delay)/.12);
+          context.fillStyle=p.cssColor;context.beginPath();context.arc(position.x,position.y,radius,0,Math.PI*2);context.fill();
+        }
+        context.globalAlpha=1;settled=progress>=.99;
       }
-      context.globalAlpha=1;
       startFeaturedCopyTransition(titleLayer,time);
       if(elapsed<FEATURED_REVEAL_MS)featuredDraw.frame=requestAnimationFrame(frame);
-      else{featuredDraw.cancelParticles=null;resolve();}
+      else{context.clearRect(0,0,width,height);featuredDraw.cancelParticles=null;resolve();}
     }
     featuredDraw.frame=requestAnimationFrame(frame);
   });
@@ -1047,9 +1108,8 @@ function featuredReturnRoundRect(context,x,y,width,height,radius) {
 }
 function featuredReturnCardFace(card) {
   const width=card.offsetWidth,height=card.offsetHeight,computed=getComputedStyle(card);
-  const canvas=document.createElement('canvas');canvas.width=Math.ceil(width*2);canvas.height=Math.ceil(height*2);
+  const canvas=document.createElement('canvas');canvas.width=Math.ceil(width);canvas.height=Math.ceil(height);
   const context=canvas.getContext('2d');if(!context)return null;
-  context.scale(2,2);
   const colors=computed.backgroundImage.match(/rgba?\([^)]*\)|#[\da-f]+/gi)||['#5b4945','#29232e'];
   const gradient=context.createLinearGradient(0,0,width,height);gradient.addColorStop(0,colors[0]);gradient.addColorStop(1,colors[1]||colors[0]);
   featuredReturnRoundRect(context,0,0,width,height,parseFloat(computed.borderRadius)||14);context.fillStyle=gradient;context.fill();
@@ -1057,6 +1117,21 @@ function featuredReturnCardFace(card) {
   const border=getComputedStyle(card,'::before'),inset=parseFloat(border.left)||6;
   featuredReturnRoundRect(context,inset,inset,width-inset*2,height-inset*2,parseFloat(border.borderRadius)||9);
   context.strokeStyle=border.borderTopColor;context.lineWidth=1;context.stroke();
+  const medallion=getComputedStyle(card,'::after');
+  if(medallion.content!=='none'&&parseFloat(medallion.borderRadius)>0){
+    context.save();context.clip();
+    const cx=width*.52,cy=height*.5;
+    const ringColors=border.backgroundImage.match(/rgba?\([^)]*\)/g)||[];
+    context.strokeStyle=ringColors.find(color=>!color.includes(', 0)'))||border.borderTopColor;
+    for(let ring=1;ring<=7;ring++){
+      context.beginPath();context.ellipse(cx,cy,width*ring*.1,height*ring*.1,0,0,Math.PI*2);context.stroke();
+    }
+    const rx=(parseFloat(medallion.width)||width*.72)/2,ry=(parseFloat(medallion.height)||height*.48)/2;
+    context.beginPath();context.ellipse(width/2,height/2,rx,ry,0,0,Math.PI*2);
+    context.fillStyle=medallion.backgroundColor;context.fill();context.strokeStyle=medallion.borderTopColor;context.stroke();
+    context.beginPath();context.ellipse(width/2,height/2,rx+3.5,ry+3.5,0,0,Math.PI*2);context.stroke();
+    context.restore();
+  }
   const logo=card.querySelector('.icon'),logoSize=parseFloat(getComputedStyle(logo).width)||24;
   const label=card.querySelector('span:not(.draw-card-number)'),labelStyle=getComputedStyle(label);
   const lineHeight=parseFloat(labelStyle.lineHeight)||parseFloat(labelStyle.fontSize)*1.6,gap=parseFloat(computed.rowGap)||8;
@@ -1092,8 +1167,9 @@ function captureFeaturedReturnHand() {
   clone.querySelectorAll('.draw-card').forEach(card=>card.classList.remove('is-picked','is-armed'));
   feature.parentElement.append(clone);
   try {
-    const bitmap=document.createElement('canvas');bitmap.width=Math.ceil(bounds.width);bitmap.height=Math.ceil(bounds.height);
+    const bitmap=document.createElement('canvas');bitmap.width=Math.ceil(bounds.width/3);bitmap.height=Math.ceil(bounds.height/3);
     const context=bitmap.getContext('2d',{willReadFrequently:true});if(!context)return null;
+    context.scale(bitmap.width/bounds.width,bitmap.height/bounds.height);
     const rootRect=clone.getBoundingClientRect(),deck=clone.querySelector('.draw-deck'),deckRect=deck.getBoundingClientRect(),deckStyle=getComputedStyle(deck);
     const perspective=parseFloat(deckStyle.perspective)||800,origin=deckStyle.perspectiveOrigin.split(' ').map(parseFloat);
     const hand=[...clone.querySelectorAll('.draw-card')];
@@ -1117,7 +1193,7 @@ function captureFeaturedReturnHand() {
   } finally {clone.remove();}
 }
 function featuredReturnKey(bounds) {
-  return [featuredId,bounds.width,bounds.height,innerWidth,innerHeight,devicePixelRatio,isCompactViewport()].join(':');
+  return [featuredId,bounds.width,bounds.height,innerWidth,devicePixelRatio,isCompactViewport(),matchMedia('(orientation:portrait)').matches].join(':');
 }
 function queueFeaturedReturnPreparation() {
   clearTimeout(featuredReturnCache.timer);
@@ -1134,33 +1210,27 @@ function prepareFeaturedReturnModel() {
   if(!image?.naturalWidth)return null;
   const key=featuredReturnKey(bounds);
   if(featuredReturnCache.key===key&&featuredReturnCache.model)return featuredReturnCache.model;
-  const from=document.createElement('canvas'),resolution=144;from.width=from.height=resolution;
-  const source=from.getContext('2d',{willReadFrequently:true});if(!source)return null;
-  // Sample only the transparent asset. Rasterizing a full DPR-sized panel with
-  // drop-shadow and then reading it back caused the large click-time stall.
-  source.drawImage(image,0,0,resolution,resolution);
+  const from=sampleFeaturedPhoto(image);
   const destination=featuredImageRect(bounds,image);
-  const to=captureFeaturedReturnHand();if(!to)return null;
-  const sample=(bitmap,step,rect)=>{
-    const data=bitmap.getContext('2d',{willReadFrequently:true}).getImageData(0,0,bitmap.width,bitmap.height).data,points=[];
-    for(let y=0;y<bitmap.height;y+=step)for(let x=0;x<bitmap.width;x+=step){const offset=(y*bitmap.width+x)*4;if(data[offset+3]>96)points.push({x:rect?rect.x+x/bitmap.width*rect.width:x,y:rect?rect.y+y/bitmap.height*rect.height:y,color:[data[offset],data[offset+1],data[offset+2]],alpha:data[offset+3]/255});}
-    return points;
-  };
-  const fromPoints=sample(from,1,destination),toPoints=sample(to,3);if(!fromPoints.length||!toPoints.length)return null;
-  const count=Math.min(Math.max(fromPoints.length,toPoints.length),isCompactViewport()?800:1700);
+  const hand=captureFeaturedReturnHand();if(!hand)return null;
+  const to=readFeaturedPixels(hand.getContext('2d')),handRect={x:0,y:0,width:bounds.width,height:bounds.height};
+  if(!from?.count||!to.count)return null;
+  const count=Math.min(Math.max(from.count,to.count),isCompactViewport()?800:1700);
   const particles=Array.from({length:count},(_,index)=>{
-    const start=fromPoints[Math.floor(index*fromPoints.length/count)],target=toPoints[Math.floor(index*toPoints.length/count)],seed=Math.random();
+    const start=featuredSamplePoint(from,destination,index/count),target=featuredSamplePoint(to,handRect,index/count),seed=Math.random();
     const path=createFeaturedParticlePath(start,target,{bend:12+seed*14,lift:10,delay:(target.x/bounds.width)*.065+seed*.05,end:.88+seed*.1});
     const coefficients=axis=>[start[axis],3*(path.first[axis]-start[axis]),3*(start[axis]-2*path.first[axis]+path.second[axis]),target[axis]-start[axis]+3*(path.first[axis]-path.second[axis])];
-    const [red,green,blue]=start.color,dr=(target.color[0]-red)/32,dg=(target.color[1]-green)/32,db=(target.color[2]-blue)/32;
-    const colors=Array.from({length:33},(_,step)=>`rgb(${Math.round(red+dr*step)},${Math.round(green+dg*step)},${Math.round(blue+db*step)})`);
-    return {start,target,path,x:coefficients('x'),y:coefficients('y'),colors,radius:.62+seed*.48};
+    const [r,g,b]=start.color;
+    return {start,target,path,x:coefficients('x'),y:coefficients('y'),r,g,b,dr:target.color[0]-r,dg:target.color[1]-g,db:target.color[2]-b,radius:.62+seed*.48};
   });
   const text=prepareFeaturedReturnText();
   const model={w:bounds.width,h:bounds.height,particles,text};
   featuredReturnCache.key=key;featuredReturnCache.model=model;
   return model;
 }
+// Twelve bits cover the sub-pixel grain colours; reuse one bounded palette
+// across deals instead of constructing 33 CSS strings for every single grain.
+const returnParticleInk=Array.from({length:4096},(_,index)=>'#'+index.toString(16).padStart(3,'0'));
 function buildFeaturedReturnLayers() {
   const model=prepareFeaturedReturnModel();if(!model)return null;
   const ratio=Math.min(window.devicePixelRatio||1,isCompactViewport()?1.5:2);
@@ -1218,8 +1288,10 @@ async function restartFeaturedChoices() {
         context.clearRect(0,0,w,h);
         for(const particle of particles){
           const gather=featuredSmooth((progress-particle.path.delay)/(particle.path.end-particle.path.delay)),x=particle.x,y=particle.y;
-          context.fillStyle=particle.colors[Math.round(gather*32)];context.globalAlpha=.82*(1-material)*featuredSmooth((progress-particle.path.delay)/.18)*(particle.start.alpha+(particle.target.alpha-particle.start.alpha)*gather);
-          context.beginPath();context.arc(((x[3]*gather+x[2])*gather+x[1])*gather+x[0],((y[3]*gather+y[2])*gather+y[1])*gather+y[0],particle.radius+Math.sin(gather*Math.PI)*.18,0,Math.PI*2);context.fill();
+          const red=(particle.r+particle.dr*gather)>>4,green=(particle.g+particle.dg*gather)>>4,blue=(particle.b+particle.db*gather)>>4;
+          context.fillStyle=returnParticleInk[(red<<8)|(green<<4)|blue];context.globalAlpha=.82*(1-material)*featuredSmooth((progress-particle.path.delay)/.18)*(particle.start.alpha+(particle.target.alpha-particle.start.alpha)*gather);
+          const px=((x[3]*gather+x[2])*gather+x[1])*gather+x[0],py=((y[3]*gather+y[2])*gather+y[1])*gather+y[0],radius=particle.radius+.72*gather*(1-gather);
+          context.fillRect(px-radius,py-radius,radius*2,radius*2);
         }
         context.globalAlpha=1;
         startFeaturedCopyTransition(text,time);
